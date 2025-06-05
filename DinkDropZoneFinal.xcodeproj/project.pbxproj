@@ -1,0 +1,563 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		DAC0474D2DF1267E00035C53 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DAC047372DF1267C00035C53 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DAC0473E2DF1267C00035C53;
+			remoteInfo = DinkDropZoneFinal;
+		};
+		DAC047572DF1267E00035C53 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DAC047372DF1267C00035C53 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DAC0473E2DF1267C00035C53;
+			remoteInfo = DinkDropZoneFinal;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		DAC0473F2DF1267C00035C53 /* DinkDropZoneFinal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DinkDropZoneFinal.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DAC0474C2DF1267E00035C53 /* DinkDropZoneFinalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DinkDropZoneFinalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DAC047562DF1267E00035C53 /* DinkDropZoneFinalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DinkDropZoneFinalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		DAC047412DF1267C00035C53 /* DinkDropZoneFinal */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DinkDropZoneFinal;
+			sourceTree = "<group>";
+		};
+		DAC0474F2DF1267E00035C53 /* DinkDropZoneFinalTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DinkDropZoneFinalTests;
+			sourceTree = "<group>";
+		};
+		DAC047592DF1267E00035C53 /* DinkDropZoneFinalUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DinkDropZoneFinalUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DAC0473C2DF1267C00035C53 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAC047492DF1267E00035C53 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAC047532DF1267E00035C53 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DAC047362DF1267C00035C53 = {
+			isa = PBXGroup;
+			children = (
+				DAC047412DF1267C00035C53 /* DinkDropZoneFinal */,
+				DAC0474F2DF1267E00035C53 /* DinkDropZoneFinalTests */,
+				DAC047592DF1267E00035C53 /* DinkDropZoneFinalUITests */,
+				DAC047402DF1267C00035C53 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DAC047402DF1267C00035C53 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DAC0473F2DF1267C00035C53 /* DinkDropZoneFinal.app */,
+				DAC0474C2DF1267E00035C53 /* DinkDropZoneFinalTests.xctest */,
+				DAC047562DF1267E00035C53 /* DinkDropZoneFinalUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DAC0473E2DF1267C00035C53 /* DinkDropZoneFinal */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DAC047602DF1267E00035C53 /* Build configuration list for PBXNativeTarget "DinkDropZoneFinal" */;
+			buildPhases = (
+				DAC0473B2DF1267C00035C53 /* Sources */,
+				DAC0473C2DF1267C00035C53 /* Frameworks */,
+				DAC0473D2DF1267C00035C53 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				DAC047412DF1267C00035C53 /* DinkDropZoneFinal */,
+			);
+			name = DinkDropZoneFinal;
+			packageProductDependencies = (
+			);
+			productName = DinkDropZoneFinal;
+			productReference = DAC0473F2DF1267C00035C53 /* DinkDropZoneFinal.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DAC0474B2DF1267E00035C53 /* DinkDropZoneFinalTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DAC047632DF1267E00035C53 /* Build configuration list for PBXNativeTarget "DinkDropZoneFinalTests" */;
+			buildPhases = (
+				DAC047482DF1267E00035C53 /* Sources */,
+				DAC047492DF1267E00035C53 /* Frameworks */,
+				DAC0474A2DF1267E00035C53 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DAC0474E2DF1267E00035C53 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DAC0474F2DF1267E00035C53 /* DinkDropZoneFinalTests */,
+			);
+			name = DinkDropZoneFinalTests;
+			packageProductDependencies = (
+			);
+			productName = DinkDropZoneFinalTests;
+			productReference = DAC0474C2DF1267E00035C53 /* DinkDropZoneFinalTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		DAC047552DF1267E00035C53 /* DinkDropZoneFinalUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DAC047662DF1267E00035C53 /* Build configuration list for PBXNativeTarget "DinkDropZoneFinalUITests" */;
+			buildPhases = (
+				DAC047522DF1267E00035C53 /* Sources */,
+				DAC047532DF1267E00035C53 /* Frameworks */,
+				DAC047542DF1267E00035C53 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DAC047582DF1267E00035C53 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DAC047592DF1267E00035C53 /* DinkDropZoneFinalUITests */,
+			);
+			name = DinkDropZoneFinalUITests;
+			packageProductDependencies = (
+			);
+			productName = DinkDropZoneFinalUITests;
+			productReference = DAC047562DF1267E00035C53 /* DinkDropZoneFinalUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DAC047372DF1267C00035C53 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1630;
+				LastUpgradeCheck = 1630;
+				TargetAttributes = {
+					DAC0473E2DF1267C00035C53 = {
+						CreatedOnToolsVersion = 16.3;
+					};
+					DAC0474B2DF1267E00035C53 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = DAC0473E2DF1267C00035C53;
+					};
+					DAC047552DF1267E00035C53 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = DAC0473E2DF1267C00035C53;
+					};
+				};
+			};
+			buildConfigurationList = DAC0473A2DF1267C00035C53 /* Build configuration list for PBXProject "DinkDropZoneFinal" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = DAC047362DF1267C00035C53;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DAC047402DF1267C00035C53 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DAC0473E2DF1267C00035C53 /* DinkDropZoneFinal */,
+				DAC0474B2DF1267E00035C53 /* DinkDropZoneFinalTests */,
+				DAC047552DF1267E00035C53 /* DinkDropZoneFinalUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DAC0473D2DF1267C00035C53 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAC0474A2DF1267E00035C53 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAC047542DF1267E00035C53 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DAC0473B2DF1267C00035C53 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAC047482DF1267E00035C53 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAC047522DF1267E00035C53 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DAC0474E2DF1267E00035C53 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DAC0473E2DF1267C00035C53 /* DinkDropZoneFinal */;
+			targetProxy = DAC0474D2DF1267E00035C53 /* PBXContainerItemProxy */;
+		};
+		DAC047582DF1267E00035C53 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DAC0473E2DF1267C00035C53 /* DinkDropZoneFinal */;
+			targetProxy = DAC047572DF1267E00035C53 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		DAC0475E2DF1267E00035C53 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DAC0475F2DF1267E00035C53 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		DAC047612DF1267E00035C53 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = store.dinkdrop.DinkDropZoneFinal;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		DAC047622DF1267E00035C53 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = store.dinkdrop.DinkDropZoneFinal;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		DAC047642DF1267E00035C53 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = store.dinkdrop.DinkDropZoneFinalTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DinkDropZoneFinal.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DinkDropZoneFinal";
+			};
+			name = Debug;
+		};
+		DAC047652DF1267E00035C53 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = store.dinkdrop.DinkDropZoneFinalTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DinkDropZoneFinal.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DinkDropZoneFinal";
+			};
+			name = Release;
+		};
+		DAC047672DF1267E00035C53 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = store.dinkdrop.DinkDropZoneFinalUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = DinkDropZoneFinal;
+			};
+			name = Debug;
+		};
+		DAC047682DF1267E00035C53 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 393H57YT2S;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = store.dinkdrop.DinkDropZoneFinalUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = DinkDropZoneFinal;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		DAC0473A2DF1267C00035C53 /* Build configuration list for PBXProject "DinkDropZoneFinal" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAC0475E2DF1267E00035C53 /* Debug */,
+				DAC0475F2DF1267E00035C53 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DAC047602DF1267E00035C53 /* Build configuration list for PBXNativeTarget "DinkDropZoneFinal" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAC047612DF1267E00035C53 /* Debug */,
+				DAC047622DF1267E00035C53 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DAC047632DF1267E00035C53 /* Build configuration list for PBXNativeTarget "DinkDropZoneFinalTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAC047642DF1267E00035C53 /* Debug */,
+				DAC047652DF1267E00035C53 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DAC047662DF1267E00035C53 /* Build configuration list for PBXNativeTarget "DinkDropZoneFinalUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAC047672DF1267E00035C53 /* Debug */,
+				DAC047682DF1267E00035C53 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DAC047372DF1267C00035C53 /* Project object */;
+}
