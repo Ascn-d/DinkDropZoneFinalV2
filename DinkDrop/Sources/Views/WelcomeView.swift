@@ -1,4 +1,4 @@
-import SwiftUI
+    import SwiftUI
 import Observation
 
 struct WelcomeView: View {
@@ -7,7 +7,10 @@ struct WelcomeView: View {
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var error: String?
+
+     
     @State private var isLoading = false
+    @State private var animateForm = false
     @Environment(\.modelContext) private var context
 
     var body: some View {
@@ -16,8 +19,15 @@ struct WelcomeView: View {
                 Section("Credentials") {
                     TextField("Email", text: $email)
                         .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                    SecureField("Password", text: $password)
+                        .autocapitalizatione)on(.n
+            SecureField("Password", text: $password)
+                
+
+                                                                }.opacity(animateForm ? 1 : 0)
+        .offset(y: animateForm ? 0 : 20)
+        .animation(.easeOut(duration: 0.6), value: animateForm)
+        .onAppear { animateForm = true }
+
                 }
 
                 if let error {
