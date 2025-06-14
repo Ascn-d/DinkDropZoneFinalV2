@@ -201,7 +201,9 @@ struct AuthenticationSection: View {
             // Sign in with Apple
             SignInWithAppleButton(.signIn) { request in
                 request.requestedScopes = [.fullName, .email]
-            } onCompletion: onAppleSignIn
+            } onCompletion: { result in
+                onAppleSignIn(result)
+            }
             .signInWithAppleButtonStyle(.whiteOutline)
             .frame(height: 50)
             .cornerRadius(25)

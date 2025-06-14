@@ -16,11 +16,9 @@ struct ContentView: View {
                     if appState.currentUser == nil {
                         AuthView()
                     } else if !hasOnboarded {
-                        OnboardingView()
-                    } else if appState.needsProfileSetup {
-                        ProfileWizardView()
+                        OnboardingView(isOnboardingComplete: $hasOnboarded)
                     } else {
-                        HomeTabView()
+                        SidebarHomeView()
                     }
                 }
                 .animation(.easeInOut(duration: 0.5), value: appState.currentUser)

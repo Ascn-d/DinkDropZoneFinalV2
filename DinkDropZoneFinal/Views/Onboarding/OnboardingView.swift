@@ -9,216 +9,469 @@ import SwiftUI
 import CoreLocationUI
 
 struct OnboardingView: View {
-    @AppStorage("hasOnboarded") private var hasOnboarded: Bool = false
+    @Binding var isOnboardingComplete: Bool
     @State private var currentPage = 0
-    @State private var showConfetti = false
     @State private var selectedSkillLevel: SkillLevel = .beginner
-    @State private var selectedPlayStyle: PlayStyle = .recreational
-    @State private var selectedAvatar: String = "person.crop.circle.fill"
-    @State private var animateElements = false
+    @State private var selectedPlayStyle: PlayStyle = .balanced
+    @State private var selectedAvatar = "person.circle.fill"
+    @State private var displayName = ""
+    @State private var city = ""
+    @State private var homeCourt = ""
+    @State private var showConfetti = false
     
-    private let totalPages = 4
+    let totalPages = 7
     
     var body: some View {
         ZStack {
-            // Dynamic background
-            OnboardingBackground(currentPage: currentPage)
-                .ignoresSafeArea()
+            // Dynamic background that changes per page
+            OnboardingGradientBackground(page: currentPage)
             
-            VStack(spacing: 0) {
-                // Progress indicator
-                ProgressIndicator(currentPage: currentPage, totalPages: totalPages)
-                    .padding(.top, 60)
-                    .padding(.horizontal, 24)
+            TabView(selection: $currentPage) {
+                // Page 1: Welcome
+                WelcomePage()
+                    .tag(0)
                 
-                // Page content
-                TabView(selection: $currentPage) {
-                    WelcomePage()
-                        .tag(0)
-                    SkillLevelPage(selectedSkillLevel: $selectedSkillLevel)
-                        .tag(1)
-                    PlayStylePage(selectedPlayStyle: $selectedPlayStyle)
-                        .tag(2)
-                    AvatarSelectionPage(selectedAvatar: $selectedAvatar)
-                        .tag(3)
+                // Page 2: Display Name
+                DisplayNamePage(displayName: $displayName)
+                    .tag(1)
+                
+                // Page 3: City/Location
+                CityPage(city: $city)
+                    .tag(2)
+                
+                // Page 4: Home Court
+                HomeCourtPage(homeCourt: $homeCourt)
+                    .tag(3)
+                
+                // Page 5: Skill Level
+                SkillLevelPage(selectedSkillLevel: $selectedSkillLevel)
+                    .tag(4)
+                
+                // Page 6: Play Style
+                PlayStylePage(selectedPlayStyle: $selectedPlayStyle)
+                    .tag(5)
+                
+                // Page 7: Avatar Selection
+                AvatarSelectionPage(selectedAvatar: $selectedAvatar)
+                    .tag(6)
+            }
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+            
+            // Custom page indicators
+            VStack {
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    ForEach(0..<totalPages, id: \.self) { index in
+                        Capsule()
+                            .fill(index == currentPage ? Color.white : Color.white.opacity(0.3))
+                            .frame(width: index == currentPage ? 30 : 8, height: 8)
+                            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: currentPage)
+                    }
                 }
-                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-                .animation(.easeInOut(duration: 0.5), value: currentPage)
+                .padding(.bottom, 100)
+            }
+            
+            // Navigation buttons
+            VStack {
+                Spacer()
                 
-                // Navigation buttons
-                NavigationButtons(
-                    currentPage: $currentPage,
-                    totalPages: totalPages,
-                    onFinish: finishOnboarding
-                )
-                .padding(.horizontal, 24)
+                HStack {
+                    if currentPage > 0 {
+                        Button("Back") {
+                            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                currentPage -= 1
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 30)
+                        .padding(.vertical, 12)
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(25)
+                    }
+                    
+                    Spacer()
+                    
+                    Button(currentPage == totalPages - 1 ? "Complete Setup!" : "Next") {
+                        if currentPage == totalPages - 1 {
+                            completeOnboarding()
+                        } else {
+                            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                currentPage += 1
+                            }
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue, Color.purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(25)
+                    .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
+                    .disabled(!isCurrentPageValid)
+                    .opacity(isCurrentPageValid ? 1.0 : 0.6)
+                }
+                .padding(.horizontal, 30)
                 .padding(.bottom, 50)
             }
             
             // Confetti overlay
             if showConfetti {
-                EnhancedConfettiView()
-                    .ignoresSafeArea()
-                    .transition(.opacity)
+                ConfettiView()
+                    .allowsHitTesting(false)
             }
         }
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.8).delay(0.3)) {
-                animateElements = true
-            }
+        .ignoresSafeArea()
+    }
+    
+    private var isCurrentPageValid: Bool {
+        switch currentPage {
+        case 1: return !displayName.trimmingCharacters(in: .whitespaces).isEmpty
+        case 2: return !city.trimmingCharacters(in: .whitespaces).isEmpty
+        case 3: return !homeCourt.trimmingCharacters(in: .whitespaces).isEmpty
+        default: return true
         }
     }
     
-    private func finishOnboarding() {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
+    private func completeOnboarding() {
+        showConfetti = true
         
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            showConfetti = true
-        }
+        // Save user preferences to AppState or UserDefaults
+        saveUserPreferences()
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeInOut(duration: 0.5)) {
-                hasOnboarded = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) {
+                isOnboardingComplete = true
             }
         }
     }
-}
-
-// MARK: - Supporting Types
-
-enum SkillLevel: String, CaseIterable {
-    case beginner = "Beginner"
-    case intermediate = "Intermediate"
-    case advanced = "Advanced"
-    case pro = "Pro"
     
-    var description: String {
-        switch self {
-        case .beginner: return "Just starting out"
-        case .intermediate: return "Getting the hang of it"
-        case .advanced: return "Competitive player"
-        case .pro: return "Tournament level"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .beginner: return "figure.walk"
-        case .intermediate: return "figure.run"
-        case .advanced: return "figure.pickleball"
-        case .pro: return "trophy.fill"
-        }
+    private func saveUserPreferences() {
+        // Save to UserDefaults for now - in a real app you'd save to your user model
+        UserDefaults.standard.set(displayName, forKey: "userDisplayName")
+        UserDefaults.standard.set(city, forKey: "userCity")
+        UserDefaults.standard.set(homeCourt, forKey: "userHomeCourt")
+        UserDefaults.standard.set(selectedSkillLevel.rawValue, forKey: "userSkillLevel")
+        UserDefaults.standard.set(selectedPlayStyle.rawValue, forKey: "userPlayStyle")
+        UserDefaults.standard.set(selectedAvatar, forKey: "userAvatar")
     }
 }
 
-enum PlayStyle: String, CaseIterable {
-    case recreational = "Recreational"
-    case competitive = "Competitive"
-    case social = "Social"
-    case fitness = "Fitness"
-    
-    var description: String {
-        switch self {
-        case .recreational: return "Play for fun and relaxation"
-        case .competitive: return "Love the thrill of competition"
-        case .social: return "Meet new people and make friends"
-        case .fitness: return "Stay active and healthy"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .recreational: return "sun.max.fill"
-        case .competitive: return "flame.fill"
-        case .social: return "person.3.fill"
-        case .fitness: return "heart.fill"
-        }
-    }
-}
-
-// MARK: - Page Views
+// MARK: - Individual Pages
 
 struct WelcomePage: View {
     @State private var animateTitle = false
     @State private var animateSubtitle = false
-    @State private var animateIcon = false
+    @State private var animateFeatures = false
     
     var body: some View {
         VStack(spacing: 40) {
             Spacer()
             
-            // Animated icon
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.blue.opacity(0.3), Color.clear],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 80
-                        )
-                    )
-                    .frame(width: 160, height: 160)
-                    .scaleEffect(animateIcon ? 1.2 : 0.8)
-                    .opacity(animateIcon ? 0.6 : 0)
+            // Logo and title
+            VStack(spacing: 20) {
+                Image(systemName: "sportscourt.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.white)
+                    .scaleEffect(animateTitle ? 1.0 : 0.5)
+                    .opacity(animateTitle ? 1.0 : 0.0)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.2), value: animateTitle)
                 
-                Image(systemName: "figure.pickleball")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 80, height: 80)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.white, .blue.opacity(0.9)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .scaleEffect(animateIcon ? 1.0 : 0.5)
-                    .opacity(animateIcon ? 1.0 : 0)
-                    .shadow(color: .blue.opacity(0.5), radius: 15, x: 0, y: 8)
+                Text("Welcome to DinkDropZone!")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .opacity(animateTitle ? 1.0 : 0.0)
+                    .offset(y: animateTitle ? 0 : 20)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.4), value: animateTitle)
+                
+                Text("Your ultimate pickleball companion")
+                    .font(.title2)
+                    .foregroundColor(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .opacity(animateSubtitle ? 1.0 : 0.0)
+                    .offset(y: animateSubtitle ? 0 : 20)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.6), value: animateSubtitle)
             }
             
-            VStack(spacing: 16) {
-                Text("Welcome to")
-                    .font(.title2)
-                    .foregroundColor(.white.opacity(0.8))
-                    .opacity(animateTitle ? 1.0 : 0)
-                    .offset(y: animateTitle ? 0 : 20)
+            // Feature highlights
+            VStack(spacing: 20) {
+                FeatureHighlight(
+                    icon: "person.2.fill",
+                    title: "Find Players",
+                    description: "Connect with players at your skill level",
+                    color: .blue
+                )
+                .opacity(animateFeatures ? 1.0 : 0.0)
+                .offset(x: animateFeatures ? 0 : -50)
+                .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.8), value: animateFeatures)
                 
-                Text("DinkDropZone")
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.white, .blue.opacity(0.9)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .opacity(animateTitle ? 1.0 : 0)
-                    .offset(y: animateTitle ? 0 : 30)
+                FeatureHighlight(
+                    icon: "chart.line.uptrend.xyaxis",
+                    title: "Track Progress",
+                    description: "Monitor your improvement and stats",
+                    color: .green
+                )
+                .opacity(animateFeatures ? 1.0 : 0.0)
+                .offset(x: animateFeatures ? 0 : 50)
+                .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(1.0), value: animateFeatures)
                 
-                Text("Your journey to pickleball mastery starts here. Let's set up your profile and get you connected with the community.")
-                    .font(.body)
-                    .foregroundColor(.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .opacity(animateSubtitle ? 1.0 : 0)
-                    .offset(y: animateSubtitle ? 0 : 20)
+                FeatureHighlight(
+                    icon: "trophy.fill",
+                    title: "Compete",
+                    description: "Join tournaments and climb the leaderboard",
+                    color: .orange
+                )
+                .opacity(animateFeatures ? 1.0 : 0.0)
+                .offset(x: animateFeatures ? 0 : -50)
+                .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(1.2), value: animateFeatures)
             }
-            .padding(.horizontal, 32)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 30)
+        .onAppear {
+            animateTitle = true
+            animateSubtitle = true
+            animateFeatures = true
+        }
+    }
+}
+
+struct DisplayNamePage: View {
+    @Binding var displayName: String
+    @State private var animateElements = false
+    @FocusState private var isTextFieldFocused: Bool
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            Spacer()
+            
+            VStack(spacing: 20) {
+                Image(systemName: "person.badge.plus.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.white)
+                    .scaleEffect(animateElements ? 1.0 : 0.5)
+                    .opacity(animateElements ? 1.0 : 0.0)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.2), value: animateElements)
+                
+                VStack(spacing: 15) {
+                    Text("What should we call you?")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("Choose a display name that other players will see")
+                        .font(.title3)
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                }
+                .opacity(animateElements ? 1.0 : 0.0)
+                .offset(y: animateElements ? 0 : 20)
+                .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.4), value: animateElements)
+            }
+            
+            // Custom text field
+            VStack(spacing: 10) {
+                TextField("Enter your display name", text: $displayName)
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .focused($isTextFieldFocused)
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 15)
+                            .fill(Color.white.opacity(0.15))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 15)
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                    .scaleEffect(animateElements ? 1.0 : 0.8)
+                    .opacity(animateElements ? 1.0 : 0.0)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.6), value: animateElements)
+                
+                if !displayName.isEmpty {
+                    Text("Looking good, \(displayName)! 👋")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                        .transition(.opacity.combined(with: .scale))
+                }
+            }
+            .padding(.horizontal, 30)
             
             Spacer()
         }
         .onAppear {
-            withAnimation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.2)) {
-                animateIcon = true
+            animateElements = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                isTextFieldFocused = true
             }
-            withAnimation(.easeOut(duration: 0.8).delay(0.6)) {
-                animateTitle = true
+        }
+    }
+}
+
+struct CityPage: View {
+    @Binding var city: String
+    @State private var animateElements = false
+    @FocusState private var isTextFieldFocused: Bool
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            Spacer()
+            
+            VStack(spacing: 20) {
+                Image(systemName: "location.circle.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.white)
+                    .scaleEffect(animateElements ? 1.0 : 0.5)
+                    .opacity(animateElements ? 1.0 : 0.0)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.2), value: animateElements)
+                
+                VStack(spacing: 15) {
+                    Text("Where do you play?")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("Tell us your city so we can find nearby players and courts")
+                        .font(.title3)
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                }
+                .opacity(animateElements ? 1.0 : 0.0)
+                .offset(y: animateElements ? 0 : 20)
+                .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.4), value: animateElements)
             }
-            withAnimation(.easeOut(duration: 0.8).delay(1.0)) {
-                animateSubtitle = true
+            
+            // Custom text field
+            VStack(spacing: 10) {
+                TextField("Enter your city", text: $city)
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .focused($isTextFieldFocused)
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 15)
+                            .fill(Color.white.opacity(0.15))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 15)
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                    .scaleEffect(animateElements ? 1.0 : 0.8)
+                    .opacity(animateElements ? 1.0 : 0.0)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.6), value: animateElements)
+                
+                if !city.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Great! We'll find players near \(city)")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.8))
+                    .transition(.opacity.combined(with: .scale))
+                }
+            }
+            .padding(.horizontal, 30)
+            
+            Spacer()
+        }
+        .onAppear {
+            animateElements = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                isTextFieldFocused = true
+            }
+        }
+    }
+}
+
+struct HomeCourtPage: View {
+    @Binding var homeCourt: String
+    @State private var animateElements = false
+    @FocusState private var isTextFieldFocused: Bool
+    
+    var body: some View {
+        VStack(spacing: 40) {
+            Spacer()
+            
+            VStack(spacing: 20) {
+                Image(systemName: "house.circle.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.white)
+                    .scaleEffect(animateElements ? 1.0 : 0.5)
+                    .opacity(animateElements ? 1.0 : 0.0)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.2), value: animateElements)
+                
+                VStack(spacing: 15) {
+                    Text("What's your home court?")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("Where do you usually play? This helps us suggest nearby matches")
+                        .font(.title3)
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                }
+                .opacity(animateElements ? 1.0 : 0.0)
+                .offset(y: animateElements ? 0 : 20)
+                .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.4), value: animateElements)
+            }
+            
+            // Custom text field
+            VStack(spacing: 10) {
+                TextField("Enter your home court or club", text: $homeCourt)
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .focused($isTextFieldFocused)
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 15)
+                            .fill(Color.white.opacity(0.15))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 15)
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                    .scaleEffect(animateElements ? 1.0 : 0.8)
+                    .opacity(animateElements ? 1.0 : 0.0)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.8).delay(0.6), value: animateElements)
+                
+                if !homeCourt.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "mappin.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("Perfect! We'll prioritize matches at \(homeCourt)")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.8))
+                    .transition(.opacity.combined(with: .scale))
+                }
+            }
+            .padding(.horizontal, 30)
+            
+            Spacer()
+        }
+        .onAppear {
+            animateElements = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                isTextFieldFocused = true
             }
         }
     }
@@ -229,41 +482,51 @@ struct SkillLevelPage: View {
     @State private var animateCards = false
     
     var body: some View {
-        VStack(spacing: 32) {
-            VStack(spacing: 16) {
+        VStack(spacing: 30) {
+            Spacer()
+            
+            VStack(spacing: 15) {
                 Text("What's your skill level?")
-                    .font(.title.bold())
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                 
-                Text("This helps us match you with players of similar abilities")
-                    .font(.subheadline)
+                Text("Help us match you with the right players")
+                    .font(.title3)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 32)
-            .padding(.top, 40)
+            .padding(.horizontal, 30)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 2), spacing: 16) {
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 15) {
                 ForEach(SkillLevel.allCases, id: \.self) { level in
                     SkillLevelCard(
                         level: level,
-                        isSelected: selectedSkillLevel == level,
-                        onTap: { selectedSkillLevel = level }
-                    )
+                        isSelected: selectedSkillLevel == level
+                    ) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            selectedSkillLevel = level
+                        }
+                    }
                     .scaleEffect(animateCards ? 1.0 : 0.8)
-                    .opacity(animateCards ? 1.0 : 0)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(Double(SkillLevel.allCases.firstIndex(of: level) ?? 0) * 0.1), value: animateCards)
+                    .opacity(animateCards ? 1.0 : 0.0)
+                    .animation(
+                        .spring(response: 0.6, dampingFraction: 0.8)
+                        .delay(Double(SkillLevel.allCases.firstIndex(of: level) ?? 0) * 0.1),
+                        value: animateCards
+                    )
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 30)
             
             Spacer()
         }
         .onAppear {
-            withAnimation {
-                animateCards = true
-            }
+            animateCards = true
         }
     }
 }
@@ -273,41 +536,51 @@ struct PlayStylePage: View {
     @State private var animateCards = false
     
     var body: some View {
-        VStack(spacing: 32) {
-            VStack(spacing: 16) {
-                Text("How do you like to play?")
-                    .font(.title.bold())
+        VStack(spacing: 30) {
+            Spacer()
+            
+            VStack(spacing: 15) {
+                Text("What's your play style?")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                 
-                Text("Choose your primary motivation for playing pickleball")
-                    .font(.subheadline)
+                Text("This helps us understand your game")
+                    .font(.title3)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 32)
-            .padding(.top, 40)
+            .padding(.horizontal, 30)
             
-            VStack(spacing: 16) {
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 15) {
                 ForEach(PlayStyle.allCases, id: \.self) { style in
                     PlayStyleCard(
                         style: style,
-                        isSelected: selectedPlayStyle == style,
-                        onTap: { selectedPlayStyle = style }
-                    )
+                        isSelected: selectedPlayStyle == style
+                    ) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            selectedPlayStyle = style
+                        }
+                    }
                     .scaleEffect(animateCards ? 1.0 : 0.8)
-                    .opacity(animateCards ? 1.0 : 0)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(Double(PlayStyle.allCases.firstIndex(of: style) ?? 0) * 0.1), value: animateCards)
+                    .opacity(animateCards ? 1.0 : 0.0)
+                    .animation(
+                        .spring(response: 0.6, dampingFraction: 0.8)
+                        .delay(Double(PlayStyle.allCases.firstIndex(of: style) ?? 0) * 0.1),
+                        value: animateCards
+                    )
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 30)
             
             Spacer()
         }
         .onAppear {
-            withAnimation {
-                animateCards = true
-            }
+            animateCards = true
         }
     }
 }
@@ -316,290 +589,251 @@ struct AvatarSelectionPage: View {
     @Binding var selectedAvatar: String
     @State private var animateAvatars = false
     
-    private let avatarOptions = [
+    let avatarOptions = [
+        "person.circle.fill",
         "person.crop.circle.fill",
-        "person.crop.circle.badge.plus",
-        "person.crop.circle.badge.checkmark",
-        "person.crop.circle.badge.xmark",
-        "person.crop.circle.badge.moon",
-        "person.crop.circle.badge.clock"
+        "figure.walk",
+        "figure.run",
+        "sportscourt.fill",
+        "tennis.racket"
     ]
     
     var body: some View {
-        VStack(spacing: 32) {
-            VStack(spacing: 16) {
+        VStack(spacing: 40) {
+            Spacer()
+            
+            VStack(spacing: 15) {
                 Text("Choose your avatar")
-                    .font(.title.bold())
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                 
-                Text("Pick an avatar that represents you on the court")
-                    .font(.subheadline)
+                Text("Pick an icon that represents you")
+                    .font(.title3)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 32)
-            .padding(.top, 40)
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 3), spacing: 20) {
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 20) {
                 ForEach(avatarOptions, id: \.self) { avatar in
-                    AvatarOption(
-                        systemName: avatar,
-                        isSelected: selectedAvatar == avatar,
-                        onTap: { selectedAvatar = avatar }
-                    )
+                    Button(action: {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            selectedAvatar = avatar
+                        }
+                    }) {
+                        Image(systemName: avatar)
+                            .font(.system(size: 40))
+                            .foregroundColor(selectedAvatar == avatar ? .blue : .white)
+                            .frame(width: 80, height: 80)
+                            .background(
+                                Circle()
+                                    .fill(selectedAvatar == avatar ? Color.white : Color.white.opacity(0.2))
+                                    .overlay(
+                                        Circle()
+                                            .stroke(
+                                                selectedAvatar == avatar ? Color.blue : Color.clear,
+                                                lineWidth: 3
+                                            )
+                                    )
+                            )
+                            .scaleEffect(selectedAvatar == avatar ? 1.1 : 1.0)
+                            .shadow(
+                                color: selectedAvatar == avatar ? .blue.opacity(0.5) : .clear,
+                                radius: 10,
+                                x: 0,
+                                y: 5
+                            )
+                    }
                     .scaleEffect(animateAvatars ? 1.0 : 0.5)
-                    .opacity(animateAvatars ? 1.0 : 0)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(Double(avatarOptions.firstIndex(of: avatar) ?? 0) * 0.1), value: animateAvatars)
+                    .opacity(animateAvatars ? 1.0 : 0.0)
+                    .animation(
+                        .spring(response: 0.6, dampingFraction: 0.8)
+                        .delay(Double(avatarOptions.firstIndex(of: avatar) ?? 0) * 0.1),
+                        value: animateAvatars
+                    )
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 30)
             
             Spacer()
         }
         .onAppear {
-            withAnimation {
-                animateAvatars = true
-            }
+            animateAvatars = true
         }
     }
 }
 
 // MARK: - Supporting Views
 
-struct OnboardingBackground: View {
-    let currentPage: Int
-    @State private var animateGradient = false
-    
-    var body: some View {
-        let colors = backgroundColors(for: currentPage)
-        
-        LinearGradient(
-            colors: animateGradient ? colors.reversed() : colors,
-            startPoint: animateGradient ? .topLeading : .bottomTrailing,
-            endPoint: animateGradient ? .bottomTrailing : .topLeading
-        )
-        .onAppear {
-            withAnimation(.easeInOut(duration: 4.0).repeatForever(autoreverses: true)) {
-                animateGradient.toggle()
-            }
-        }
-        .animation(.easeInOut(duration: 0.8), value: currentPage)
-    }
-    
-    private func backgroundColors(for page: Int) -> [Color] {
-        switch page {
-        case 0: return [Color.blue.opacity(0.8), Color.purple.opacity(0.6)]
-        case 1: return [Color.green.opacity(0.8), Color.blue.opacity(0.6)]
-        case 2: return [Color.orange.opacity(0.8), Color.red.opacity(0.6)]
-        case 3: return [Color.purple.opacity(0.8), Color.pink.opacity(0.6)]
-        default: return [Color.blue.opacity(0.8), Color.purple.opacity(0.6)]
-        }
-    }
-}
-
-struct ProgressIndicator: View {
-    let currentPage: Int
-    let totalPages: Int
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<totalPages, id: \.self) { index in
-                Capsule()
-                    .fill(index <= currentPage ? Color.white : Color.white.opacity(0.3))
-                    .frame(width: index == currentPage ? 24 : 8, height: 8)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: currentPage)
-            }
-        }
-    }
-}
-
 struct SkillLevelCard: View {
     let level: SkillLevel
     let isSelected: Bool
-    let onTap: () -> Void
+    let action: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
+        Button(action: action) {
             VStack(spacing: 12) {
-                Image(systemName: level.icon)
-                    .font(.system(size: 32))
+                Text(level.rawValue)
+                    .font(.headline)
+                    .fontWeight(.semibold)
                     .foregroundColor(isSelected ? .blue : .white)
                 
-                VStack(spacing: 4) {
-                    Text(level.rawValue)
-                        .font(.headline)
-                        .foregroundColor(isSelected ? .blue : .white)
-                    
-                    Text(level.description)
-                        .font(.caption)
-                        .foregroundColor(isSelected ? .blue.opacity(0.8) : .white.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                }
+                Text(level.description)
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .blue.opacity(0.8) : .white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
+            .frame(height: 100)
             .frame(maxWidth: .infinity)
-            .frame(height: 120)
+            .padding(.horizontal, 12)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? Color.white : Color.white.opacity(0.1))
+                RoundedRectangle(cornerRadius: 15)
+                    .fill(isSelected ? Color.white : Color.white.opacity(0.15))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 15)
+                            .stroke(
+                                isSelected ? Color.blue : Color.white.opacity(0.3),
+                                lineWidth: isSelected ? 2 : 1
+                            )
                     )
             )
+            .scaleEffect(isSelected ? 1.05 : 1.0)
+            .shadow(
+                color: isSelected ? .blue.opacity(0.3) : .clear,
+                radius: 10,
+                x: 0,
+                y: 5
+            )
         }
-        .scaleEffect(isSelected ? 1.05 : 1.0)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isSelected)
+        .buttonStyle(ScaleButtonStyle())
     }
 }
 
 struct PlayStyleCard: View {
     let style: PlayStyle
     let isSelected: Bool
-    let onTap: () -> Void
+    let action: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                Image(systemName: style.icon)
-                    .font(.system(size: 24))
+        Button(action: action) {
+            VStack(spacing: 12) {
+                Text(style.rawValue)
+                    .font(.headline)
+                    .fontWeight(.semibold)
                     .foregroundColor(isSelected ? .blue : .white)
-                    .frame(width: 40)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(style.rawValue)
-                        .font(.headline)
-                        .foregroundColor(isSelected ? .blue : .white)
-                    
-                    Text(style.description)
-                        .font(.subheadline)
-                        .foregroundColor(isSelected ? .blue.opacity(0.8) : .white.opacity(0.7))
-                }
-                
-                Spacer()
-                
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.blue)
-                }
+                Text(style.description)
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .blue.opacity(0.8) : .white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .frame(height: 120)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.white : Color.white.opacity(0.1))
+                RoundedRectangle(cornerRadius: 15)
+                    .fill(isSelected ? Color.white : Color.white.opacity(0.15))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 15)
+                            .stroke(
+                                isSelected ? Color.blue : Color.white.opacity(0.3),
+                                lineWidth: isSelected ? 2 : 1
+                            )
                     )
             )
+            .scaleEffect(isSelected ? 1.05 : 1.0)
+            .shadow(
+                color: isSelected ? .blue.opacity(0.3) : .clear,
+                radius: 10,
+                x: 0,
+                y: 5
+            )
         }
-        .scaleEffect(isSelected ? 1.02 : 1.0)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isSelected)
+        .buttonStyle(ScaleButtonStyle())
     }
 }
 
-struct AvatarOption: View {
-    let systemName: String
-    let isSelected: Bool
-    let onTap: () -> Void
+struct OnboardingGradientBackground: View {
+    let page: Int
+    @State private var animateGradient = false
+    
+    var gradientColors: [Color] {
+        switch page {
+        case 0: return [.blue, .purple, .pink]
+        case 1: return [.green, .blue, .teal]
+        case 2: return [.orange, .red, .pink]
+        case 3: return [.purple, .blue, .indigo]
+        case 4: return [.cyan, .blue, .purple]
+        case 5: return [.mint, .green, .blue]
+        case 6: return [.pink, .purple, .blue]
+        default: return [.blue, .purple, .pink]
+        }
+    }
     
     var body: some View {
-        Button(action: onTap) {
-            Image(systemName: systemName)
-                .font(.system(size: 40))
-                .foregroundColor(isSelected ? .blue : .white)
-                .frame(width: 80, height: 80)
-                .background(
-                    Circle()
-                        .fill(isSelected ? Color.white : Color.white.opacity(0.1))
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.3), lineWidth: 2)
-                        )
-                )
+        LinearGradient(
+            colors: gradientColors,
+            startPoint: animateGradient ? .topLeading : .bottomTrailing,
+            endPoint: animateGradient ? .bottomTrailing : .topLeading
+        )
+        .ignoresSafeArea()
+        .onAppear {
+            withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
+                animateGradient = true
+            }
         }
-        .scaleEffect(isSelected ? 1.1 : 1.0)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isSelected)
+        .onChange(of: page) { _ in
+            withAnimation(.easeInOut(duration: 0.8)) {
+                animateGradient.toggle()
+            }
+        }
     }
 }
 
-struct NavigationButtons: View {
-    @Binding var currentPage: Int
-    let totalPages: Int
-    let onFinish: () -> Void
+struct ConfettiView: View {
+    @State private var animate = false
     
     var body: some View {
-        HStack {
-            // Back button
-            if currentPage > 0 {
-                Button("Back") {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentPage -= 1
-                    }
-                }
-                .foregroundColor(.white.opacity(0.8))
-                .font(.system(size: 16, weight: .medium))
+        ZStack {
+            ForEach(0..<50, id: \.self) { index in
+                Circle()
+                    .fill(Color.random)
+                    .frame(width: CGFloat.random(in: 4...12))
+                    .position(
+                        x: CGFloat.random(in: 0...UIScreen.main.bounds.width),
+                        y: animate ? UIScreen.main.bounds.height + 100 : -100
+                    )
+                    .animation(
+                        .linear(duration: Double.random(in: 2...4))
+                        .delay(Double.random(in: 0...2))
+                        .repeatForever(autoreverses: false),
+                        value: animate
+                    )
             }
-            
-            Spacer()
-            
-            // Next/Finish button
-            Button(currentPage == totalPages - 1 ? "Get Started" : "Next") {
-                if currentPage == totalPages - 1 {
-                    onFinish()
-                } else {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentPage += 1
-                    }
-                }
-            }
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.blue)
-            .frame(width: 120, height: 44)
-            .background(Color.white)
-            .cornerRadius(22)
-            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+        }
+        .onAppear {
+            animate = true
         }
     }
 }
 
-struct EnhancedConfettiView: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        
-        // Create multiple emitter layers for different effects
-        let colors: [UIColor] = [.systemBlue, .systemPurple, .systemGreen, .systemOrange, .systemPink]
-        
-        for (index, color) in colors.enumerated() {
-            let emitter = CAEmitterLayer()
-            emitter.emitterPosition = CGPoint(x: UIScreen.main.bounds.midX + CGFloat(index - 2) * 50, y: -10)
-            emitter.emitterShape = .line
-            emitter.emitterSize = CGSize(width: 50, height: 2)
-            
-            let cell = CAEmitterCell()
-            cell.birthRate = 20
-            cell.lifetime = 6.0
-            cell.velocity = 200
-            cell.velocityRange = 50
-            cell.scale = 0.03
-            cell.scaleRange = 0.02
-            cell.emissionRange = .pi / 4
-            cell.spin = 2
-            cell.spinRange = 3
-            cell.contents = UIImage(systemName: "circle.fill")?.withTintColor(color).cgImage
-            
-            emitter.emitterCells = [cell]
-            view.layer.addSublayer(emitter)
-        }
-        
-        return view
+extension Color {
+    static var random: Color {
+        return Color(
+            red: .random(in: 0...1),
+            green: .random(in: 0...1),
+            blue: .random(in: 0...1)
+        )
     }
-    
-    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 #Preview {
-    OnboardingView()
+    OnboardingView(isOnboardingComplete: .constant(false))
 }
