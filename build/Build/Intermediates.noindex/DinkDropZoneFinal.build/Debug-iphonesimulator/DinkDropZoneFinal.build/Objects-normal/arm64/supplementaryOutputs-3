@@ -1,0 +1,18 @@
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Views/MatchmakingView.swift":
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchmakingView.dia"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchmakingView.o"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchmakingView.swiftdeps"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchmakingView.d"
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchmakingView.swiftconstvalues"
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/DinkDropZoneFinalApp.swift":
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/DinkDropZoneFinalApp.swiftconstvalues"
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/DinkDropZoneFinalApp.dia"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/DinkDropZoneFinalApp.swiftdeps"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/DinkDropZoneFinalApp.o"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/DinkDropZoneFinalApp.d"
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/ViewModels/AppState.swift":
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AppState.dia"
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AppState.swiftconstvalues"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AppState.d"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AppState.swiftdeps"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AppState.o"

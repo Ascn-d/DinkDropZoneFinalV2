@@ -7,12 +7,17 @@ struct ContentView: View {
     var body: some View {
         Group {
             if appState.currentUser == nil {
-                WelcomeView()
+                AuthView()
+            } else if appState.needsProfileSetup {
+                ProfileWizardView()
             } else {
                 HomeTabView()
             }
         }
         .animation(.easeInOut, value: appState.currentUser)
+        .sheet(item: Binding(get: { appState.matchProposal }, set: { appState.matchProposal = $0 })) { proposal in
+            MatchProposalView(proposal: proposal)
+        }
     }
 }
 

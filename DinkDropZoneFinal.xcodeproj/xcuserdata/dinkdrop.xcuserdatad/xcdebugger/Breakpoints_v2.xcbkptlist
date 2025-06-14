@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Bucket
+   uuid = "9973497C-54D7-4E59-96C5-63496357F4C1"
+   type = "1"
+   version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "3D300220-2A1B-43B8-8506-C5254A51F74B"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "DinkDropZoneFinal/Services/LeagueService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "83"
+            endingLineNumber = "83"
+            landmarkName = "importLeague(from:usersCache:)"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "3D300220-2A1B-43B8-8506-C5254A51F74B - 35d7abb6265ab058"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "DinkDropZoneFinal.LeagueService.importLeague(from: DinkDropZoneFinal.NetworkService.LeagueDTO, usersCache: Swift.Dictionary&lt;Swift.String, DinkDropZoneFinal.User&gt;) -&gt; DinkDropZoneFinal.PickleLeague"
+                  moduleName = "DinkDropZoneFinal.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Services/LeagueService.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "84"
+                  endingLineNumber = "84">
+               </Location>
+               <Location
+                  uuid = "3D300220-2A1B-43B8-8506-C5254A51F74B - 15db1f0a00bd9c61"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "closure #3 (DinkDropZoneFinal.NetworkService.MatchDTO) -&gt; Swift.Optional&lt;DinkDropZoneFinal.LeagueMatch&gt; in DinkDropZoneFinal.LeagueService.importLeague(from: DinkDropZoneFinal.NetworkService.LeagueDTO, usersCache: Swift.Dictionary&lt;Swift.String, DinkDropZoneFinal.User&gt;) -&gt; DinkDropZoneFinal.PickleLeague"
+                  moduleName = "DinkDropZoneFinal.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Services/LeagueService.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "84"
+                  endingLineNumber = "84">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
+</Bucket>

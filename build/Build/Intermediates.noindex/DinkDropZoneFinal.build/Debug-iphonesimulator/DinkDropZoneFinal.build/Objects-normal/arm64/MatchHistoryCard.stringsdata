@@ -1,0 +1,16 @@
+{
+  "source": "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Views/Components/MatchHistoryCard.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "vs %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 11
+        }
+      }
+    ]
+  },
+  "version": 1
+}

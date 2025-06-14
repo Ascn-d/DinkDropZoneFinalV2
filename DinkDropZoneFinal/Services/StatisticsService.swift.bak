@@ -1,0 +1,615 @@
+import Foundation
+import SwiftData
+import SwiftUI
+
+// Import models from StatisticsModels
+@_exported import struct DinkDropZoneFinal.DetailedUserStats
+@_exported import struct DinkDropZoneFinal.OverviewStats
+@_exported import struct DinkDropZoneFinal.PerformanceStats
+@_exported import struct DinkDropZoneFinal.TrendStats
+@_exported import struct DinkDropZoneFinal.OpponentStats
+@_exported import struct DinkDropZoneFinal.ShotStats
+@_exported import struct DinkDropZoneFinal.StreakStats
+@_exported import struct DinkDropZoneFinal.MonthlyPerformance
+@_exported import struct DinkDropZoneFinal.DayStats
+@_exported import struct DinkDropZoneFinal.EloDataPoint
+@_exported import struct DinkDropZoneFinal.MatchAnalysis
+@_exported import struct DinkDropZoneFinal.MatchPrediction
+@_exported import struct DinkDropZoneFinal.PerformanceInsight
+@_exported import struct DinkDropZoneFinal.PredictionFactor
+@_exported import enum DinkDropZoneFinal.InsightType
+@_exported import enum DinkDropZoneFinal.MatchResult
+@_exported import enum DinkDropZoneFinal.StreakType
+
+// MARK: - Match Extensions
+
+extension Match {
+    func getPointsScored(for user: User) -> Int {
+        if user.id == player1.id {
+            return player1Score
+        } else if user.id == player2.id {
+            return player2Score
+        }
+        return 0
+    }
+    
+    func getPointsConceded(for user: User) -> Int {
+        if user.id == player1.id {
+            return player2Score
+        } else if user.id == player2.id {
+            return player1Score
+        }
+        return 0
+    }
+    
+    func isWin(for user: User) -> Bool {
+        getPointsScored(for: user) > getPointsConceded(for: user)
+    }
+}
+
+// MARK: - Statistics Service
+
+@MainActor
+final class StatisticsService {
+    
+    private var modelContext: ModelContext
+    
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+    
+    // MARK: - Performance Analytics
+    
+    func calculateDetailedStats(for user: User?) -> DetailedUserStats? {
+        guard let user = user else { return nil }
+        let matches = getMatches(for: user)
+        
+        return DetailedUserStats(
+            overview: calculateOverviewStats(user: user, matches: matches),
+            performance: calculatePerformanceStats(user: user, matches: matches),
+            trends: calculateTrendStats(matches: matches),
+            opponents: calculateOpponentStats(user: user, matches: matches),
+            shots: calculateShotStats(user: user, matches: matches),
+            streaks: calculateStreakStats(user: user, matches: matches)
+        )
+    }
+    
+    func calculateMonthlyPerformance(for user: User?, year: Int, month: Int) -> MonthlyPerformance? {
+        guard let user = user else { return nil }
+        let matches = getMatches(for: user, year: year, month: month)
+        
+        var dailyStats: [Int: DayStats] = [:]
+        let calendar = Calendar.current
+        
+        for match in matches {
+            let day = calendar.component(.day, from: match.date)
+            
+            if dailyStats[day] == nil {
+                dailyStats[day] = DayStats(day: day, matches: 0, wins: 0, pointsScored: 0, pointsConceded: 0)
+            }
+            
+            dailyStats[day]?.matches += 1
+            if match.isWin(for: user) {
+                dailyStats[day]?.wins += 1
+            }
+            dailyStats[day]?.pointsScored += match.getPointsScored(for: user)
+            dailyStats[day]?.pointsConceded += match.getPointsConceded(for: user)
+        }
+        
+        return MonthlyPerformance(
+            year: year,
+            month: month,
+            totalMatches: matches.count,
+            totalWins: matches.filter { $0.isWin(for: user) }.count,
+            totalPointsScored: matches.reduce(0) { $0 + $1.getPointsScored(for: user) },
+            totalPointsConceded: matches.reduce(0) { $0 + $1.getPointsConceded(for: user) },
+            dailyStats: Array(dailyStats.values).sorted { $0.day < $1.day }
+        )
+    }
+    
+    func calculateEloProgression(for user: User?, days: Int = 30) -> [EloDataPoint]? {
+        guard let user = user else { return nil }
+        let matches = getRecentMatches(for: user, days: days)
+        var progression: [EloDataPoint] = []
+        var currentElo = user.elo
+        
+        // Start with current ELO and work backwards
+        progression.append(EloDataPoint(date: Date(), elo: currentElo, change: 0))
+        
+        for match in matches.reversed() {
+            let eloChange = Int(match.eloChange) ?? 0
+            currentElo -= eloChange
+            progression.append(EloDataPoint(
+                date: match.date,
+                elo: currentElo,
+                change: eloChange
+            ))
+        }
+        
+        return progression.reversed()
+    }
+    
+    // MARK: - Match Analysis
+    
+    func analyzeMatchPerformance(_ match: Match, for user: User?) -> MatchAnalysis? {
+        guard let user = user else { return nil }
+        let isWin = match.isWin(for: user)
+        let pointsScored = match.getPointsScored(for: user)
+        let pointsConceded = match.getPointsConceded(for: user)
+        let eloChange = Int(match.eloChange) ?? 0
+        
+        let dominance = calculateDominance(pointsScored: pointsScored, pointsConceded: pointsConceded)
+        let performance = calculateMatchPerformance(
+            isWin: isWin,
+            pointsScored: pointsScored,
+            dominance: dominance
+        )
+        
+        return MatchAnalysis(
+            matchId: match.id,
+            result: isWin ? .win : .loss,
+            pointsScored: pointsScored,
+            pointsConceded: pointsConceded,
+            eloChange: eloChange,
+            dominance: dominance,
+            performance: performance,
+            insights: generateMatchInsights(
+                isWin: isWin,
+                pointsScored: pointsScored,
+                pointsConceded: pointsConceded,
+                dominance: dominance
+            )
+        )
+    }
+    
+    // MARK: - Prediction & Insights
+    
+    func predictMatchOutcome(user: User?, opponent: User?) -> MatchPrediction? {
+        guard let user = user, let opponent = opponent else { return nil }
+        let eloExpectation = calculateEloExpectation(rating: user.elo, opponent: opponent.elo)
+        
+        let userForm = calculateRecentForm(for: user)
+        let opponentForm = calculateRecentForm(for: opponent)
+        
+        let formAdjustment = (userForm.winRate - opponentForm.winRate) * 0.1
+        let adjustedProbability = min(0.95, max(0.05, eloExpectation + formAdjustment))
+        
+        return MatchPrediction(
+            userWinProbability: adjustedProbability,
+            expectedEloChange: calculateExpectedEloChange(user: user, opponent: opponent, winProb: adjustedProbability),
+            confidenceLevel: calculatePredictionConfidence(user: user, opponent: opponent),
+            factors: analyzePredictionFactors(user: user, opponent: opponent)
+        )
+    }
+    
+    func generatePerformanceInsights(for user: User?) -> [PerformanceInsight]? {
+        guard let user = user,
+              let stats = calculateDetailedStats(for: user) else { return nil }
+        
+        var insights: [PerformanceInsight] = []
+        
+        // ELO insights
+        if stats.trends.eloTrend > 0 {
+            insights.append(PerformanceInsight(
+                type: InsightType.positive,
+                title: "Rising Star!",
+                description: "Your ELO has increased by \(Int(stats.trends.eloTrend)) points recently",
+                icon: "arrow.up.circle.fill"
+            ))
+        } else if stats.trends.eloTrend < -50 {
+            insights.append(PerformanceInsight(
+                type: InsightType.suggestion,
+                title: "Practice Opportunity",
+                description: "Consider some practice matches to get back on track",
+                icon: "figure.walk"
+            ))
+        }
+        
+        // Win streak insights
+        if user.winStreak >= 5 {
+            insights.append(PerformanceInsight(
+                type: InsightType.achievement,
+                title: "On Fire! 🔥",
+                description: "You're on a \(user.winStreak)-match win streak!",
+                icon: "flame.fill"
+            ))
+        }
+        
+        // Performance insights
+        if stats.performance.averagePointsPerMatch > 9.0 {
+            insights.append(PerformanceInsight(
+                type: InsightType.positive,
+                title: "Consistent Scorer",
+                description: "You're averaging \(String(format: "%.1f", stats.performance.averagePointsPerMatch)) points per match",
+                icon: "target"
+            ))
+        }
+        
+        return insights
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func getMatches(for user: User) -> [Match] {
+        let descriptor = FetchDescriptor<Match>()
+        let allMatches = (try? modelContext.fetch(descriptor)) ?? []
+        return allMatches.filter { $0.player1.id == user.id || $0.player2.id == user.id }
+    }
+    
+    private func getMatches(for user: User, year: Int, month: Int) -> [Match] {
+        let matches = getMatches(for: user)
+        let calendar = Calendar.current
+        
+        return matches.filter { match in
+            let components = calendar.dateComponents([.year, .month], from: match.date)
+            return components.year == year && components.month == month
+        }
+    }
+    
+    private func getRecentMatches(for user: User, days: Int) -> [Match] {
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        return getMatches(for: user).filter { $0.date >= cutoffDate }
+    }
+    
+    private func calculateOverviewStats(user: User, matches: [Match]) -> OverviewStats {
+        let wins = matches.filter { $0.isWin(for: user) }.count
+        let totalMatches = matches.count
+        let winRate = totalMatches > 0 ? Double(wins) / Double(totalMatches) : 0
+        
+        return OverviewStats(
+            totalMatches: totalMatches,
+            wins: wins,
+            losses: totalMatches - wins,
+            winRate: winRate,
+            currentElo: user.elo,
+            eloChange: calculateEloChange(matches: matches),
+            averagePointsPerMatch: calculateAveragePoints(matches: matches, for: user)
+        )
+    }
+    
+    private func calculatePerformanceStats(user: User, matches: [Match]) -> PerformanceStats {
+        let recentMatches = getRecentMatches(for: user, days: 30)
+        let recentWins = recentMatches.filter { $0.isWin(for: user) }.count
+        let recentWinRate = recentMatches.isEmpty ? 0 : Double(recentWins) / Double(recentMatches.count)
+        
+        return PerformanceStats(
+            recentWinRate: recentWinRate,
+            averagePointsPerMatch: calculateAveragePoints(matches: matches, for: user),
+            averagePointsConceded: calculateAveragePointsConceded(matches: matches, for: user),
+            bestPerformance: findBestPerformance(matches: matches, for: user),
+            worstPerformance: findWorstPerformance(matches: matches, for: user)
+        )
+    }
+    
+    private func calculateTrendStats(matches: [Match]) -> TrendStats {
+        let recentMatches = matches.suffix(10)
+        let recentWins = recentMatches.filter { $0.isWin(for: matches.first?.player1) }.count
+        let recentWinRate = recentMatches.isEmpty ? 0 : Double(recentWins) / Double(recentMatches.count)
+        
+        return TrendStats(
+            recentWinRate: recentWinRate,
+            eloTrend: calculateEloTrend(matches: matches),
+            performanceTrend: calculatePerformanceTrend(matches: matches)
+        )
+    }
+    
+    private func calculateOpponentStats(user: User, matches: [Match]) -> OpponentStats {
+        var wins: [String: Int] = [:]
+        var losses: [String: Int] = [:]
+        
+        for match in matches {
+            let opponentId = match.player1.id == user.id ? match.player2.id : match.player1.id
+            if match.isWin(for: user) {
+                wins[opponentId, default: 0] += 1
+            } else {
+                losses[opponentId, default: 0] += 1
+            }
+        }
+        
+        return OpponentStats(
+            toughestOpponent: findToughestOpponent(wins: wins, losses: losses),
+            easiestOpponent: findEasiestOpponent(wins: wins, losses: losses),
+            mostPlayedOpponent: findMostPlayedOpponent(wins: wins, losses: losses)
+        )
+    }
+    
+    private func calculateShotStats(user: User, matches: [Match]) -> ShotStats {
+        // Placeholder implementation
+        return ShotStats(
+            favoriteShot: "Dink",
+            shotAccuracy: 0.75,
+            shotDistribution: ["Dink": 0.6, "Drive": 0.3, "Lob": 0.1]
+        )
+    }
+    
+    private func calculateStreakStats(user: User, matches: [Match]) -> StreakStats {
+        let currentStreak = user.winStreak
+        let streakType: StreakType = currentStreak >= 0 ? .win : .loss
+        
+        return StreakStats(
+            currentStreak: abs(currentStreak),
+            longestStreak: user.longestStreak,
+            streakType: streakType
+        )
+    }
+    
+    private func calculateEloExpectation(rating: Int, opponent: Int) -> Double {
+        let difference = Double(rating - opponent)
+        return 1.0 / (1.0 + pow(10.0, -difference / 400.0))
+    }
+    
+    private func calculateExpectedEloChange(user: User, opponent: User, winProb: Double) -> Int {
+        let k = 32.0
+        let expectedScore = calculateEloExpectation(rating: user.elo, opponent: opponent.elo)
+        return Int(k * (1.0 - expectedScore))
+    }
+    
+    private func calculatePredictionConfidence(user: User, opponent: User) -> Double {
+        // Placeholder implementation
+        return 0.75
+    }
+    
+    private func analyzePredictionFactors(user: User, opponent: User) -> [PredictionFactor] {
+        var factors: [PredictionFactor] = []
+        
+        // ELO difference
+        let eloDiff = Double(user.elo - opponent.elo) / 400.0
+        factors.append(PredictionFactor(
+            name: "ELO Rating",
+            impact: eloDiff * 10,
+            description: eloDiff > 0 ? "Higher ELO rating" : "Lower ELO rating"
+        ))
+        
+        // Form comparison
+        let userForm = calculateRecentForm(for: user)
+        let opponentForm = calculateRecentForm(for: opponent)
+        let formDiff = userForm.winRate - opponentForm.winRate
+        factors.append(PredictionFactor(
+            name: "Recent Form",
+            impact: formDiff * 10,
+            description: formDiff > 0 ? "You're in better form" : "Opponent is in better form"
+        ))
+        
+        return factors
+    }
+    
+    private func calculateRecentForm(for user: User) -> (winRate: Double, averagePoints: Double) {
+        let matches = getRecentMatches(for: user, days: 30)
+        let wins = matches.filter { $0.isWin(for: user) }.count
+        let winRate = matches.isEmpty ? 0 : Double(wins) / Double(matches.count)
+        let averagePoints = calculateAveragePoints(matches: matches, for: user)
+        return (winRate, averagePoints)
+    }
+    
+    private func calculateAveragePoints(matches: [Match], for user: User) -> Double {
+        guard !matches.isEmpty else { return 0 }
+        let totalPoints = matches.reduce(0) { $0 + $1.getPointsScored(for: user) }
+        return Double(totalPoints) / Double(matches.count)
+    }
+    
+    private func calculateAveragePointsConceded(matches: [Match], for user: User) -> Double {
+        guard !matches.isEmpty else { return 0 }
+        let totalPoints = matches.reduce(0) { $0 + $1.getPointsConceded(for: user) }
+        return Double(totalPoints) / Double(matches.count)
+    }
+    
+    private func calculateEloChange(matches: [Match]) -> Int {
+        matches.reduce(0) { $0 + (Int($1.eloChange) ?? 0) }
+    }
+    
+    private func calculateEloTrend(matches: [Match]) -> Double {
+        // Placeholder implementation
+        return 0
+    }
+    
+    private func calculatePerformanceTrend(matches: [Match]) -> Double {
+        // Placeholder implementation
+        return 0
+    }
+    
+    private func calculateDominance(pointsScored: Int, pointsConceded: Int) -> Double {
+        guard pointsScored + pointsConceded > 0 else { return 0 }
+        return Double(pointsScored) / Double(pointsScored + pointsConceded)
+    }
+    
+    private func calculateMatchPerformance(isWin: Bool, pointsScored: Int, dominance: Double) -> Double {
+        let baseScore = isWin ? 0.7 : 0.3
+        let pointsScore = min(1.0, Double(pointsScored) / 15.0) * 0.2
+        let dominanceScore = dominance * 0.1
+        return baseScore + pointsScore + dominanceScore
+    }
+    
+    private func generateMatchInsights(isWin: Bool, pointsScored: Int, pointsConceded: Int, dominance: Double) -> [String] {
+        var insights: [String] = []
+        
+        if isWin {
+            insights.append("Great win!")
+            if dominance > 0.7 {
+                insights.append("Dominant performance")
+            }
+        } else {
+            insights.append("Keep practicing!")
+            if dominance < 0.3 {
+                insights.append("Focus on defense")
+            }
+        }
+        
+        if pointsScored > 10 {
+            insights.append("Strong offensive game")
+        }
+        
+        return insights
+    }
+    
+    private func findBestPerformance(matches: [Match], for user: User) -> Double {
+        matches.map { calculateMatchPerformance(
+            isWin: $0.isWin(for: user),
+            pointsScored: $0.getPointsScored(for: user),
+            dominance: calculateDominance(
+                pointsScored: $0.getPointsScored(for: user),
+                pointsConceded: $0.getPointsConceded(for: user)
+            )
+        )}.max() ?? 0
+    }
+    
+    private func findWorstPerformance(matches: [Match], for user: User) -> Double {
+        matches.map { calculateMatchPerformance(
+            isWin: $0.isWin(for: user),
+            pointsScored: $0.getPointsScored(for: user),
+            dominance: calculateDominance(
+                pointsScored: $0.getPointsScored(for: user),
+                pointsConceded: $0.getPointsConceded(for: user)
+            )
+        )}.min() ?? 0
+    }
+    
+    private func findToughestOpponent(wins: [String: Int], losses: [String: Int]) -> String {
+        // Placeholder implementation
+        return "Player X"
+    }
+    
+    private func findEasiestOpponent(wins: [String: Int], losses: [String: Int]) -> String {
+        // Placeholder implementation
+        return "Player Y"
+    }
+    
+    private func findMostPlayedOpponent(wins: [String: Int], losses: [String: Int]) -> String {
+        // Placeholder implementation
+        return "Player Z"
+    }
+}
+
+// MARK: - Data Structures
+
+struct DetailedUserStats {
+    let overview: OverviewStats
+    let performance: PerformanceStats
+    let trends: TrendStats
+    let opponents: OpponentStats
+    let shots: ShotStats
+    let streaks: StreakStats
+}
+
+struct OverviewStats {
+    let totalMatches: Int
+    let wins: Int
+    let losses: Int
+    let winRate: Double
+    let currentElo: Int
+    let eloChange: Int
+    let averagePointsPerMatch: Double
+}
+
+struct PerformanceStats {
+    let recentWinRate: Double
+    let averagePointsPerMatch: Double
+    let averagePointsConceded: Double
+    let bestPerformance: Double
+    let worstPerformance: Double
+}
+
+struct TrendStats {
+    let recentWinRate: Double
+    let eloTrend: Double
+    let performanceTrend: Double
+}
+
+struct OpponentStats {
+    let toughestOpponent: String
+    let easiestOpponent: String
+    let mostPlayedOpponent: String
+}
+
+struct ShotStats {
+    let favoriteShot: String
+    let shotAccuracy: Double
+    let shotDistribution: [String: Double]
+}
+
+struct StreakStats {
+    let currentStreak: Int
+    let longestStreak: Int
+    let streakType: StreakType
+}
+
+struct MonthlyPerformance {
+    let year: Int
+    let month: Int
+    let totalMatches: Int
+    let totalWins: Int
+    let totalPointsScored: Int
+    let totalPointsConceded: Int
+    let dailyStats: [DayStats]
+    
+    var winRate: Double {
+        guard totalMatches > 0 else { return 0 }
+        return Double(totalWins) / Double(totalMatches)
+    }
+}
+
+struct DayStats {
+    let day: Int
+    var matches: Int
+    var wins: Int
+    var pointsScored: Int
+    var pointsConceded: Int
+    
+    var winRate: Double {
+        guard matches > 0 else { return 0 }
+        return Double(wins) / Double(matches)
+    }
+}
+
+struct EloDataPoint {
+    let date: Date
+    let elo: Int
+    let change: Int
+}
+
+struct MatchAnalysis {
+    let matchId: String
+    let result: MatchOutcome
+    let pointsScored: Int
+    let pointsConceded: Int
+    let eloChange: Int
+    let dominance: Double
+    let performance: Double
+    let insights: [String]
+}
+
+enum MatchOutcome {
+    case win, loss
+}
+
+struct MatchPrediction {
+    let userWinProbability: Double
+    let expectedEloChange: Int
+    let confidenceLevel: Double
+    let factors: [PredictionFactor]
+}
+
+struct PredictionFactor {
+    let name: String
+    let impact: Double
+    let description: String
+}
+
+struct PerformanceInsight {
+    let type: InsightType
+    let title: String
+    let description: String
+    let icon: String
+}
+
+enum InsightType {
+    case positive, negative, achievement, suggestion
+    
+    var color: String {
+        switch self {
+        case .positive: return "green"
+        case .negative: return "red"
+        case .achievement: return "purple"
+        case .suggestion: return "blue"
+        }
+    }
+} 

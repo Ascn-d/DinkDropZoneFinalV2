@@ -1,0 +1,128 @@
+{
+  "source": "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Views/AchievementsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Achievements",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 25
+        }
+      },
+      {
+        "comment": "",
+        "key": "Achievement Progress",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 38
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld of %lld unlocked",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 42
+        }
+      },
+      {
+        "comment": "",
+        "key": "Overall Progress",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 60
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 66
+        }
+      },
+      {
+        "comment": "",
+        "key": "Search achievements...",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 112
+        }
+      },
+      {
+        "comment": "",
+        "key": "Progress",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 288
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 294
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 352
+        }
+      },
+      {
+        "comment": "",
+        "key": "Achievement",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 479
+        }
+      },
+      {
+        "comment": "",
+        "key": "Earned on %@",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 434
+        }
+      },
+      {
+        "comment": "",
+        "key": "Achievement Unlocked!",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 428
+        }
+      },
+      {
+        "comment": "",
+        "key": "Not Yet Unlocked",
+        "location": {
+          "startingColumn": 42,
+          "startingLine": 444
+        }
+      },
+      {
+        "comment": "",
+        "key": "Progress: %lld%%",
+        "location": {
+          "startingColumn": 50,
+          "startingLine": 454
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 484
+        }
+      }
+    ]
+  },
+  "version": 1
+}

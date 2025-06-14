@@ -15,7 +15,13 @@ actor MatchService {
         if queue.count >= 2 {
             let p1 = queue.removeFirst()
             let p2 = queue.removeFirst()
-            let match = Match(player1: p1, player2: p2)
+            let match = Match(
+                player1: p1,
+                player2: p2,
+                player1Score: 0,
+                player2Score: 0,
+                eloChange: "0"
+            )
             context.insert(match)
             try? context.save()
             return match

@@ -69,42 +69,34 @@ struct DashboardView: View {
             // ELO and XP Cards
             HStack(spacing: 16) {
                 // ELO Card
-                StatCard(
+                StatsCard(
                     title: "ELO Rating",
                     value: "\(user.elo)",
-                    icon: "chart.line.uptrend.xyaxis",
-                    color: .blue,
-                    change: calculateEloChange()
+                    color: .blue
                 )
                 
                 // XP Card
-                StatCard(
+                StatsCard(
                     title: "Experience",
                     value: "\(user.xp)",
-                    icon: "star.fill",
-                    color: .orange,
-                    change: calculateXPChange()
+                    color: .orange
                 )
             }
             
             // Win Rate and Matches Cards
             HStack(spacing: 16) {
                 // Win Rate Card
-                StatCard(
+                StatsCard(
                     title: "Win Rate",
                     value: "\(calculateWinRate())%",
-                    icon: "trophy.fill",
-                    color: .green,
-                    change: calculateWinRateChange()
+                    color: .green
                 )
                 
                 // Matches Card
-                StatCard(
+                StatsCard(
                     title: "Matches",
                     value: "\(calculateTotalMatches())",
-                    icon: "gamecontroller.fill",
-                    color: .purple,
-                    change: calculateMatchesChange()
+                    color: .purple
                 )
             }
         }
@@ -248,21 +240,24 @@ struct DashboardView: View {
     }
     
     private func calculateTotalMatches() -> Int {
-        performanceData.last?.matches ?? 0
+        guard !performanceData.isEmpty else { return 0 }
+        return performanceData.last!.matches
     }
     
     private func calculateMatchesChange() -> String {
         guard performanceData.count >= 2 else { return "+0" }
-        let change = performanceData.last!.matches - performanceData[performanceData.count - 2].matches
+        let current = performanceData.last!.matches
+        let previous = performanceData[performanceData.count - 2].matches
+        let change = current - previous
         return change >= 0 ? "+\(change)" : "\(change)"
     }
     
     private func getRecentMatches() -> [RecentMatch] {
-        // Simulate recent matches
+        // TODO: Implement actual recent matches fetching
+        // Sample placeholder data
         return [
-            RecentMatch(opponent: "John Doe", result: "Win", score: "11-8", eloChange: "+15", date: "2 hours ago"),
-            RecentMatch(opponent: "Jane Smith", result: "Loss", score: "9-11", eloChange: "-12", date: "5 hours ago"),
-            RecentMatch(opponent: "Mike Johnson", result: "Win", score: "11-7", eloChange: "+18", date: "1 day ago")
+            RecentMatch(opponent: "Alex Turner", result: "Win", score: "11-8", eloChange: "+10", date: Date()),
+            RecentMatch(opponent: "Emma Wilson", result: "Loss", score: "9-11", eloChange: "-8", date: Date().addingTimeInterval(-3600))
         ]
     }
 }
@@ -275,45 +270,10 @@ struct RecentMatch: Identifiable {
     let result: String
     let score: String
     let eloChange: String
-    let date: String
+    let date: Date
 }
 
 // MARK: - Supporting Views
-
-struct StatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-    let change: String
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            
-            Text(value)
-                .font(.title)
-                .fontWeight(.bold)
-            
-            Text(change)
-                .font(.caption)
-                .foregroundColor(change.hasPrefix("+") ? .green : .red)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-        )
-    }
-}
 
 struct QuickActionButton: View {
     let title: String
@@ -347,14 +307,20 @@ struct RecentMatchCard: View {
     let result: String
     let score: String
     let eloChange: String
-    let date: String
+    let date: Date
+    
+    private var formattedDate: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
     
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(opponent)
                     .font(.headline)
-                Text(date)
+                Text(formattedDate)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

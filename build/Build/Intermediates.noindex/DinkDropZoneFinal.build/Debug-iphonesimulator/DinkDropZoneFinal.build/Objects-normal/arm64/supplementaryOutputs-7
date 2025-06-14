@@ -1,0 +1,18 @@
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Views/AchievementsView.swift":
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AchievementsView.d"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AchievementsView.swiftdeps"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AchievementsView.o"
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AchievementsView.swiftconstvalues"
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/AchievementsView.dia"
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Views/Components/MatchHistoryCard.swift":
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchHistoryCard.dia"
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchHistoryCard.swiftconstvalues"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchHistoryCard.swiftdeps"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchHistoryCard.o"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchHistoryCard.d"
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Services/MatchService.swift":
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchService.swiftdeps"
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchService.swiftconstvalues"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchService.d"
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchService.dia"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/MatchService.o"

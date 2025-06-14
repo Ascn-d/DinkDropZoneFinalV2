@@ -1,0 +1,18 @@
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Views/ProfileEditView.swift":
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/ProfileEditView.swiftconstvalues"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/ProfileEditView.swiftdeps"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/ProfileEditView.o"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/ProfileEditView.d"
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/ProfileEditView.dia"
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Views/StatisticsView.swift":
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/StatisticsView.swiftconstvalues"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/StatisticsView.d"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/StatisticsView.swiftdeps"
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/StatisticsView.dia"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/StatisticsView.o"
+"/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/DinkDropZoneFinal/Services/EloCalculator.swift":
+  diagnostics: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/EloCalculator.dia"
+  const-values: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/EloCalculator.swiftconstvalues"
+  object: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/EloCalculator.o"
+  dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/EloCalculator.d"
+  swift-dependencies: "/Users/dinkdrop/Downloads/DinkDropZoneFinalV2-main/build/Build/Intermediates.noindex/DinkDropZoneFinal.build/Debug-iphonesimulator/DinkDropZoneFinal.build/Objects-normal/arm64/EloCalculator.swiftdeps"

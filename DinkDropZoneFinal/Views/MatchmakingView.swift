@@ -219,7 +219,16 @@ struct MatchmakingView: View {
                 withAnimation {
                     showingMatchFound = true
                     // Simulate finding a player
-                    matchedPlayer = User(email: "opponent@example.com", elo: 1050, xp: 1500)
+                    matchedPlayer = User(
+                        email: "opponent@example.com",
+                        password: "password123",
+                        elo: 1050,
+                        xp: 1500,
+                        totalMatches: 15,
+                        wins: 10,
+                        losses: 5,
+                        winStreak: 3
+                    )
                 }
             }
         }
