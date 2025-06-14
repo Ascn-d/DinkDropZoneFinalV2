@@ -9,10 +9,16 @@ struct DinkDropApp: App {
     }()
 
     @State private var appState = AppState()
+        @AppStorage("hasOnboarded") private var hasOnboarded = false
+
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if hasOnboarded {
+                ContentView()
+            } else {
+                OnboardingView()
+            }()
                 .modelContainer(container)
                 .environment(appState)
         }
