@@ -17,9 +17,10 @@ struct WelcomeView: View {
         NavigationStack {
             Form {
                 Section("Credentials") {
-                    TextField("Email", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocapitalizatione)on(.n
+                    TextField("Email", text: $em
+                                              .textInputAutocapitalization(.none)
+                                                                      .keyboardType(.emailAddress)
+                        
             SecureField("Password", text: $password)
                 
 
