@@ -17,7 +17,7 @@ struct WelcomeView: View {
         NavigationStack {
             Form {
                 Section("Credentials") {
-                    TextField("Email", text: $em
+                    TextField("Email", text: $email)
                                               .textInputAutocapitalization(.none)
                                                                       .keyboardType(.emailAddress)
                         
