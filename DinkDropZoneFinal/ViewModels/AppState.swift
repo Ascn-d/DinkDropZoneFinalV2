@@ -1,6 +1,7 @@
 import Observation
 import SwiftData
 import Foundation
+import SwiftUI
 
 @Observable
 @MainActor
@@ -436,14 +437,16 @@ struct AppNotification: Identifiable {
     let title: String
     let message: String
     let createdAt: Date
+    let duration: TimeInterval
     let data: [String: Any]
     
-    init(type: NotificationType, title: String, message: String, data: [String: Any] = [:]) {
+    init(type: NotificationType, title: String, message: String, duration: TimeInterval = 3.0, data: [String: Any] = [:]) {
         self.id = UUID()
         self.type = type
         self.title = title
         self.message = message
         self.createdAt = Date()
+        self.duration = duration
         self.data = data
     }
 }
@@ -463,15 +466,15 @@ enum NotificationType {
         }
     }
     
-    var color: String {
+    var color: Color {
         switch self {
-        case .levelUp: return "blue"
-        case .achievement: return "purple"
-        case .matchComplete: return "green"
-        case .challengeComplete: return "orange"
-        case .friendRequest: return "blue"
-        case .tournament: return "gold"
-        case .general: return "gray"
+        case .levelUp: return .blue
+        case .achievement: return .purple
+        case .matchComplete: return .green
+        case .challengeComplete: return .orange
+        case .friendRequest: return .blue
+        case .tournament: return .yellow
+        case .general: return .gray
         }
     }
 } 

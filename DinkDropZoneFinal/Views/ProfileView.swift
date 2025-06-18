@@ -141,7 +141,7 @@ struct ProfileView: View {
                                 Spacer()
                     HStack {
                         Spacer()
-                                    Text("\(calculateLevel(from: user.xp))")
+                                    Text("\(XPManager.calculateLevel(from: user.xp))")
                                         .font(.caption)
                                         .fontWeight(.bold)
                                         .foregroundColor(.white)
@@ -201,7 +201,7 @@ struct ProfileView: View {
     private var levelProgressSection: some View {
         VStack(spacing: 12) {
             if let user = appState.currentUser {
-                let currentLevel = calculateLevel(from: user.xp)
+                let currentLevel = XPManager.calculateLevel(from: user.xp)
                 let nextLevelXP = calculateXPForLevel(currentLevel + 1)
                 let currentLevelXP = calculateXPForLevel(currentLevel)
                 let rawProgress = Double(user.xp - currentLevelXP) / Double(nextLevelXP - currentLevelXP)
@@ -329,7 +329,7 @@ struct ProfileView: View {
                 }
                 
                 VStack(spacing: 8) {
-                    DailyChallengeCard(
+                    ProfileDailyChallengeCard(
                         title: "Play a Match",
                         description: "Complete 1 match today",
                         progress: 1.0,
@@ -338,7 +338,7 @@ struct ProfileView: View {
                         icon: "gamecontroller.fill"
                     )
                     
-                    DailyChallengeCard(
+                    ProfileDailyChallengeCard(
                         title: "Win a Game",
                         description: "Win 1 game today",
                         progress: 1.0,
@@ -347,7 +347,7 @@ struct ProfileView: View {
                         icon: "trophy.fill"
                     )
                     
-                    DailyChallengeCard(
+                    ProfileDailyChallengeCard(
                         title: "Social Player",
                         description: "Play with 2 different opponents",
                         progress: 0.5,
@@ -898,10 +898,6 @@ struct ProfileView: View {
     
     // MARK: - Helper Functions
     
-    private func calculateLevel(from xp: Int) -> Int {
-        return max(1, Int(sqrt(Double(xp) / 100)))
-    }
-    
     private func calculateXPForLevel(_ level: Int) -> Int {
         return level * level * 100
     }
@@ -1054,31 +1050,31 @@ struct AchievementBadge: View {
     let achievement: Achievement
     
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [achievement.type.color, achievement.type.color.opacity(0.6)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+        VStack(spacing: 4) {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.yellow, .orange]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                    .frame(width: 60, height: 60)
-                    .shadow(color: achievement.type.color.opacity(0.3), radius: 4, x: 0, y: 2)
-                
-                Image(systemName: achievement.icon)
-                    .font(.title2)
-                    .foregroundColor(.white)
-            }
+                )
+                .frame(width: 40, height: 40)
+                .shadow(color: .yellow.opacity(0.3), radius: 4, x: 0, y: 2)
+                .overlay(
+                    Image(systemName: achievement.icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                )
             
             Text(achievement.title)
                 .font(.caption2)
                 .fontWeight(.medium)
-                .multilineTextAlignment(.center)
+                .foregroundColor(.primary)
                 .lineLimit(2)
-                .frame(width: 70)
+                .multilineTextAlignment(.center)
         }
+        .frame(width: 60)
     }
 }
 
@@ -1191,7 +1187,7 @@ struct DetailedStatCard: View {
     }
 }
 
-struct DailyChallengeCard: View {
+struct ProfileDailyChallengeCard: View {
     let title: String
     let description: String
     let progress: Double

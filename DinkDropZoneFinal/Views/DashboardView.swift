@@ -3,6 +3,7 @@ import Observation
 
 struct DashboardView: View {
     @Environment(AppState.self) private var appState
+    @Environment(XPManager.self) private var xpManager
     @State private var selectedTimeFrame: TimeFrame = .week
     @State private var selectedMetric: PerformanceChartView.PerformanceMetric = .elo
     @State private var isRefreshing = false
@@ -10,6 +11,9 @@ struct DashboardView: View {
     @State private var showingMatchmaking = false
     @State private var showingPractice = false
     @State private var showingTournament = false
+    @State private var showingStatistics = false
+    @State private var showingProfile = false
+    @State private var showingMissions = false
     
     enum TimeFrame: String, CaseIterable {
         case day = "24h"
@@ -29,20 +33,29 @@ struct DashboardView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // Stats Overview
+            VStack(spacing: 24) {
+                // Welcome header
+                welcomeHeader
+                
+                // Enhanced Stats Overview
                 if let user = appState.currentUser {
-                    statsOverview(user: user)
+                    enhancedStatsOverview(user: user)
                 }
                 
+                // Live Activity Feed
+                liveActivitySection
+                
                 // Quick Actions
-                quickActions
+                enhancedQuickActions
+                
+                // Performance Chart
+                performanceChart
                 
                 // Recent Activity
                 recentActivity
                 
-                // Performance Chart
-                performanceChart
+                // Daily Challenges
+                dailyChallengesSection
             }
             .padding()
         }
@@ -59,45 +72,259 @@ struct DashboardView: View {
         .sheet(isPresented: $showingTournament) {
             TournamentView()
         }
+        .sheet(isPresented: $showingStatistics) {
+            if let user = appState.currentUser {
+                StatisticsView(user: user)
+            }
+        }
+        .sheet(isPresented: $showingProfile) {
+            ProfileView()
+        }
+        .sheet(isPresented: $showingMissions) {
+            MissionsView()
+        }
         .onAppear {
             loadPerformanceData()
         }
     }
     
-    private func statsOverview(user: User) -> some View {
-        VStack(spacing: 16) {
-            // ELO and XP Cards
-            HStack(spacing: 16) {
-                // ELO Card
-                StatsCard(
-                    title: "ELO Rating",
-                    value: "\(user.elo)",
-                    color: .blue
-                )
+    // MARK: - Welcome Header
+    
+    private var welcomeHeader: some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(getGreeting())
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    if let user = appState.currentUser {
+                        Text(user.displayName.isEmpty ? "Player" : user.displayName)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                    }
+                }
                 
-                // XP Card
-                StatsCard(
-                    title: "Experience",
-                    value: "\(user.xp)",
-                    color: .orange
-                )
+                Spacer()
+                
+                // Profile button
+                Button {
+                    showingProfile = true
+                } label: {
+                    Circle()
+                        .fill(Color.blue.opacity(0.2))
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(.blue)
+                        )
+                }
             }
             
-            // Win Rate and Matches Cards
-            HStack(spacing: 16) {
-                // Win Rate Card
-                StatsCard(
-                    title: "Win Rate",
-                    value: "\(calculateWinRate())%",
-                    color: .green
+            // Online status
+            HStack {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 8, height: 8)
+                    Text("\(appState.onlineUsersCount) players online")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+                
+                Spacer()
+                
+                Text("Ready to play? 🏓")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    // MARK: - Enhanced Stats Overview
+    
+    private func enhancedStatsOverview(user: User) -> some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Your Performance")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button("View Details") {
+                    showingStatistics = true
+                }
+                .font(.caption)
+                .foregroundColor(.blue)
+            }
+            
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 16) {
+                AnimatedStatsCard(
+                    title: "ELO Rating",
+                    value: "\(user.elo)",
+                    subtitle: getELORank(user.elo),
+                    icon: "star.fill",
+                    color: eloColor(for: user.elo),
+                    animationDelay: 0.0
                 )
                 
-                // Matches Card
-                StatsCard(
-                    title: "Matches",
-                    value: "\(calculateTotalMatches())",
-                    color: .purple
+                AnimatedStatsCard(
+                    title: "Win Rate",
+                    value: "\(calculateWinRate())%",
+                    subtitle: "Last 30 days",
+                    icon: "chart.line.uptrend.xyaxis",
+                    color: winRateColor(for: Double(calculateWinRate()) / 100.0),
+                    animationDelay: 0.1
                 )
+                
+                AnimatedStatsCard(
+                    title: "Experience",
+                    value: "\(xpManager.currentXP)",
+                    subtitle: "Level \(xpManager.currentLevel)",
+                    icon: "bolt.fill",
+                    color: .orange,
+                    animationDelay: 0.2
+                )
+                
+                AnimatedStatsCard(
+                    title: "Win Streak",
+                    value: "\(user.winStreak)",
+                    subtitle: user.winStreak > 0 ? "wins" : "games",
+                    icon: "flame.fill",
+                    color: user.winStreak > 0 ? .red : .gray,
+                    animationDelay: 0.3
+                )
+            }
+        }
+    }
+    
+    // MARK: - Live Activity Section
+    
+    private var liveActivitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Live Activity")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button("View All") {
+                    // Navigate to full activity feed
+                }
+                .font(.caption)
+                .foregroundColor(.blue)
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(getLiveActivities()) { activity in
+                        LiveActivityCard(activity: activity)
+                            .frame(width: 280)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+    
+    // MARK: - Enhanced Quick Actions
+    
+    private var enhancedQuickActions: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Quick Actions")
+                .font(.headline)
+                .fontWeight(.bold)
+            
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 12) {
+                QuickActionCard(
+                    title: "Find Match",
+                    subtitle: "Join queue",
+                    icon: "person.2.fill",
+                    color: .blue,
+                    badge: "\(Int.random(in: 15...25))"
+                ) {
+                    showingMatchmaking = true
+                }
+                
+                QuickActionCard(
+                    title: "Practice",
+                    subtitle: "Skill training",
+                    icon: "figure.table.tennis",
+                    color: .green,
+                    badge: nil
+                ) {
+                    showingPractice = true
+                }
+                
+                QuickActionCard(
+                    title: "Tournament",
+                    subtitle: "Compete",
+                    icon: "trophy.fill",
+                    color: .orange,
+                    badge: "3 active"
+                ) {
+                    showingTournament = true
+                }
+            }
+        }
+    }
+    
+    // MARK: - Daily Challenges Section
+    
+    private var dailyChallengesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Daily Missions")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button("View All") {
+                    showingMissions = true
+                }
+                .font(.caption)
+                .foregroundColor(.blue)
+            }
+            
+            let dailyMissions = xpManager.getMissionsForDisplay().filter { $0.type.isDaily }.prefix(3)
+            
+            if dailyMissions.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.green)
+                    
+                    Text("All daily missions completed!")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("Great job! Check back tomorrow for new missions.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(12)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(Array(dailyMissions)) { mission in
+                        CompactMissionCard(mission: mission)
+                    }
+                }
             }
         }
     }
@@ -131,6 +358,14 @@ struct DashboardView: View {
                     color: .orange
                 ) {
                     showingTournament = true
+                }
+                
+                QuickActionButton(
+                    title: "Missions",
+                    icon: "target",
+                    color: .purple
+                ) {
+                    showingMissions = true
                 }
             }
         }
@@ -201,6 +436,78 @@ struct DashboardView: View {
     }
     
     // MARK: - Helper Functions
+    
+    private func getGreeting() -> String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Good night"
+        }
+    }
+    
+    private func getELORank(_ elo: Int) -> String {
+        switch elo {
+        case 0..<1000: return "Bronze"
+        case 1000..<1300: return "Silver"
+        case 1300..<1600: return "Gold"
+        case 1600..<1900: return "Platinum"
+        case 1900..<2200: return "Diamond"
+        case 2200..<2500: return "Master"
+        default: return "Legend"
+        }
+    }
+    
+    private func eloColor(for elo: Int) -> Color {
+        switch elo {
+        case 0..<1000: return Color.orange.opacity(0.8)
+        case 1000..<1300: return .gray
+        case 1300..<1600: return .yellow
+        case 1600..<1900: return .cyan
+        case 1900..<2200: return .blue
+        case 2200..<2500: return .purple
+        default: return .red
+        }
+    }
+    
+    private func winRateColor(for winRate: Double) -> Color {
+        switch winRate {
+        case 0.0..<0.4: return .red
+        case 0.4..<0.6: return .orange
+        case 0.6..<0.8: return .blue
+        default: return .green
+        }
+    }
+    
+    private func getLiveActivities() -> [LiveActivity] {
+        return [
+            LiveActivity(
+                type: .match,
+                title: "Sarah vs Mike",
+                description: "Intense match at Golden Gate Park",
+                isLive: true,
+                metadata: ["Court": "1", "Score": "8-6"],
+                pulseAnimation: true
+            ),
+            LiveActivity(
+                type: .tournament,
+                title: "Friday Championship",
+                description: "Semi-finals starting now",
+                isLive: true,
+                metadata: ["Players": "8", "Round": "Semi"],
+                pulseAnimation: true
+            ),
+            LiveActivity(
+                type: .achievement,
+                title: "Emma's Milestone",
+                description: "Reached 1800 ELO rating!",
+                timestamp: Date().addingTimeInterval(-300),
+                isLive: false,
+                metadata: ["ELO": "1800", "Rank": "Platinum"]
+            )
+        ]
+    }
     
     private func loadPerformanceData() {
         performanceData = PerformanceData.generateSampleData(days: selectedTimeFrame.days)
@@ -275,6 +582,126 @@ struct RecentMatch: Identifiable {
 
 // MARK: - Supporting Views
 
+struct QuickActionCard: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    let badge: String?
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.2))
+                        .frame(width: 50, height: 50)
+                    
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundColor(color)
+                    
+                    if let badge = badge {
+                        Text(badge)
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.red)
+                            .clipShape(Capsule())
+                            .offset(x: 20, y: -20)
+                    }
+                }
+                
+                VStack(spacing: 2) {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(12)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct DailyChallengeCard: View {
+    let challenge: DailyChallenge
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Challenge icon
+            ZStack {
+                Circle()
+                    .fill(challenge.type.color.opacity(0.2))
+                    .frame(width: 40, height: 40)
+                
+                Image(systemName: challenge.type.icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(challenge.type.color)
+            }
+            
+            // Challenge info
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(challenge.type.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    Spacer()
+                    
+                    if challenge.isCompleted {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    } else {
+                        Text("\(challenge.xpReward) XP")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
+                    }
+                }
+                
+                Text(challenge.type.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                // Progress bar
+                if !challenge.isCompleted {
+                    ProgressView(value: Double(challenge.progress), total: Double(challenge.type.targetValue))
+                        .progressViewStyle(LinearProgressViewStyle(tint: challenge.type.color))
+                        .scaleEffect(x: 1, y: 0.5, anchor: .center)
+                }
+            }
+        }
+        .padding()
+        .background(
+            challenge.isCompleted ? 
+            Color.green.opacity(0.1) : 
+            Color(.secondarySystemBackground)
+        )
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    challenge.isCompleted ? 
+                    Color.green.opacity(0.3) : 
+                    Color.clear, 
+                    lineWidth: 1
+                )
+        )
+    }
+}
+
 struct QuickActionButton: View {
     let title: String
     let icon: String
@@ -287,18 +714,18 @@ struct QuickActionButton: View {
                 Image(systemName: icon)
                     .font(.title2)
                     .foregroundColor(color)
+                
                 Text(title)
                     .font(.caption)
+                    .fontWeight(.medium)
                     .foregroundColor(.primary)
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-            )
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(12)
         }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

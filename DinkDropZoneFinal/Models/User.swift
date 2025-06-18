@@ -172,7 +172,6 @@ final class User: @unchecked Sendable {
     
     func checkForNewAchievements() -> [Achievement] {
         // Note: Achievements functionality removed for SwiftData compatibility
-        // This can be implemented using separate models or JSON storage
         return []
     }
     
@@ -199,7 +198,6 @@ final class User: @unchecked Sendable {
     
     func addXP(_ amount: Int) {
         xp += amount
-        level = XPManager.calculateLevel(from: xp)
     }
     
     func addCoins(_ amount: Int) {
@@ -256,6 +254,40 @@ final class User: @unchecked Sendable {
     func clearNotifications() {
         // Note: Notifications functionality removed for SwiftData compatibility
         // This can be implemented using separate models or JSON storage
+    }
+    
+    func updateElo(_ newElo: Int) {
+        elo = newElo
+    }
+    
+    func updateLevel(_ newLevel: Int) {
+        level = newLevel
+    }
+    
+    func updateWinStreak(_ streak: Int) {
+        winStreak = streak
+        if streak > longestWinStreak {
+            longestWinStreak = streak
+        }
+    }
+    
+    func recordMatch(won: Bool, pointsScored: Int, pointsConceded: Int, eloChange: Int) {
+        totalMatches += 1
+        totalPointsScored += pointsScored
+        totalPointsConceded += pointsConceded
+        
+        if won {
+            wins += 1
+            winStreak += 1
+            if winStreak > longestWinStreak {
+                longestWinStreak = winStreak
+            }
+        } else {
+            losses += 1
+            winStreak = 0
+        }
+        
+        elo += eloChange
     }
 }
 
