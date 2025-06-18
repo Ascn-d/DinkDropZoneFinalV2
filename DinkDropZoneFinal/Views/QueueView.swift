@@ -14,6 +14,8 @@ struct QueueView: View {
     @State private var showingTournamentDetails = false
     @State private var showingCourtBooking = false
     @State private var refreshTimer: Timer?
+    @Query(sort: \LiveMatch.startTime, order: .reverse) private var liveMatches: [LiveMatch]
+    @State private var showingNearbySheet = false
     
     var body: some View {
         NavigationStack {
@@ -86,6 +88,9 @@ struct QueueView: View {
             }
             .sheet(isPresented: $showingCourtBooking) {
                 CourtBookingView()
+            }
+            .sheet(isPresented: $showingNearbySheet) {
+                NearbyMatchSheet()
             }
         }
     }
@@ -179,21 +184,101 @@ struct QueueView: View {
                     .font(.headline)
                     .fontWeight(.bold)
                 Spacer()
+                
+                if !isInQueue {
+                    Text("Choose your game mode")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
-                ForEach(MatchType.allCases, id: \.self) { matchType in
-                    QuickMatchCard(
-                        matchType: matchType,
-                        playerCount: getPlayerCountForMatchType(matchType),
-                        averageWaitTime: getAverageWaitTime(matchType),
-                        isSelected: selectedMatchType == matchType
-                    ) {
-                        selectedMatchType = matchType
-                        if !isInQueue {
+            if isInQueue {
+                // Queue status card
+                VStack(spacing: 12) {
+                    HStack {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 12, height: 12)
+                            .scaleEffect(1.2)
+                            .animation(.easeInOut(duration: 1).repeatForever(), value: true)
+                        
+                        Text("In Queue")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.green)
+                        
+                        Spacer()
+                        
+                        Button("Leave Queue") {
+                            leaveQueue()
+                        }
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    }
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Position")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("#\(queuePosition)")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                        }
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .center, spacing: 4) {
+                            Text("Est. Wait")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("\(estimatedWaitTime / 60):\(String(format: "%02d", estimatedWaitTime % 60))")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                        }
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Mode")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(selectedMatchType.rawValue)
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(selectedMatchType.color)
+                        }
+                    }
+                }
+                .padding()
+                .background(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color.green.opacity(0.1),
+                            Color.blue.opacity(0.1)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .cornerRadius(16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                )
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 12) {
+                    ForEach(MatchType.allCases, id: \.self) { matchType in
+                        EnhancedQuickMatchCard(
+                            matchType: matchType,
+                            playerCount: getPlayerCountForMatchType(matchType),
+                            averageWaitTime: getAverageWaitTime(matchType),
+                            isSelected: selectedMatchType == matchType
+                        ) {
+                            selectedMatchType = matchType
                             joinQueue(matchType: matchType)
                         }
                     }
@@ -207,52 +292,39 @@ struct QueueView: View {
     private var liveActivitySection: some View {
         VStack(spacing: 16) {
             HStack {
-                HStack(spacing: 8) {
+                Text("Live Activity")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                Spacer()
+                
+                HStack(spacing: 4) {
                     Circle()
                         .fill(Color.green)
                         .frame(width: 8, height: 8)
-                    Text("Live Activity")
-                        .font(.headline)
-                        .fontWeight(.bold)
+                    Text("\(getNearbyPlayersCount()) nearby")
+                        .font(.caption)
+                        .foregroundColor(.green)
                 }
-                Spacer()
-                Text("\(getNearbyPlayersCount()) players nearby")
-                    .font(.caption)
-                    .foregroundColor(.green)
             }
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    // Nearby Players
-                    ForEach(getNearbyPlayers()) { player in
-                        NearbyPlayerCard(player: player) {
-                            selectedUser = player
-                            showingMatchSetup = true
-                        }
-                    }
-                    
-                    // Add more players card
-                    Button {
-                        // TODO: Show all nearby players
-                    } label: {
-                        VStack(spacing: 8) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.gray.opacity(0.2))
-                                    .frame(width: 60, height: 60)
-                                
-                                Image(systemName: "plus")
-                                    .font(.title2)
-                                    .foregroundColor(.gray)
+            // Nearby Players
+            VStack(alignment: .leading, spacing: 8) {
+                Text("🎯 Nearby Players")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(getNearbyPlayers()) { player in
+                            EnhancedNearbyPlayerCard(player: player) {
+                                selectedUser = player
+                                selectedMatchType = .casual
+                                showingMatchSetup = true
                             }
-                            
-                            Text("View All")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                         }
                     }
+                    .padding(.horizontal, 4)
                 }
-                .padding(.horizontal)
             }
             
             // Live Matches Feed
@@ -261,7 +333,7 @@ struct QueueView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
-                ForEach(getLiveMatches()) { match in
+                ForEach(liveMatches) { match in
                     LiveMatchCard(match: match)
                 }
             }
@@ -510,13 +582,6 @@ struct QueueView: View {
         return Array(users.prefix(4))
     }
     
-    private func getLiveMatches() -> [LiveMatch] {
-        return [
-            LiveMatch(id: "1", player1: "Sarah C.", player2: "Mike J.", court: "Court 1", timeElapsed: "12 min"),
-            LiveMatch(id: "2", player1: "Emma W.", player2: "Alex T.", court: "Court 3", timeElapsed: "25 min")
-        ]
-    }
-    
     private func getNearbyCourts() -> [CourtAvailability] {
         return [
             CourtAvailability(id: "1", name: "Golden Gate Park", distance: "0.8 mi", status: .available, courts: 3),
@@ -524,10 +589,10 @@ struct QueueView: View {
         ]
     }
     
-    private func getActiveTournaments() -> [QueueTournament] {
+    private func getActiveTournaments() -> [MockTournament] {
         return [
-            QueueTournament(id: "1", name: "Friday Night Lights", participants: 16, maxParticipants: 32, startTime: "7:00 PM"),
-            QueueTournament(id: "2", name: "Weekend Warriors", participants: 8, maxParticipants: 16, startTime: "9:00 AM")
+            MockTournament(id: "1", name: "Friday Night Lights", participants: 16, maxParticipants: 32, startTime: "7:00 PM"),
+            MockTournament(id: "2", name: "Weekend Warriors", participants: 8, maxParticipants: 16, startTime: "9:00 AM")
         ]
     }
     
@@ -602,59 +667,59 @@ struct QuickMatchCard: View {
     }
 }
 
-struct NearbyPlayerCard: View {
+struct EnhancedNearbyPlayerCard: View {
     let player: User
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(Color.blue.opacity(0.2))
-                        .frame(width: 60, height: 60)
-                    
-                    Text(String(player.displayName.isEmpty ? player.email.prefix(1) : player.displayName.prefix(1)))
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                    
-                    // Online indicator
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 16, height: 16)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white, lineWidth: 2)
-                        )
-                        .offset(x: 18, y: -18)
-                }
+                // Player avatar
+                Circle()
+                    .fill(Color.blue.opacity(0.2))
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Text(String(player.displayName.isEmpty ? player.email.prefix(1) : player.displayName.prefix(1)))
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                    )
+                    .overlay(
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 14, height: 14)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white, lineWidth: 2)
+                            )
+                            .offset(x: 18, y: 18)
+                    )
                 
                 VStack(spacing: 2) {
-                    Text(player.displayName.isEmpty ? "Player" : player.displayName)
+                    Text(player.displayName.isEmpty ? 
+                         player.email.components(separatedBy: "@").first ?? "Player" : 
+                         player.displayName)
                         .font(.caption)
-                        .fontWeight(.medium)
+                        .fontWeight(.semibold)
                         .lineLimit(1)
                     
                     Text("\(player.elo) ELO")
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                    
+                    Text("0.8 mi")
+                        .font(.caption2)
+                        .foregroundColor(.green)
                 }
             }
+            .frame(width: 80)
+            .padding(.vertical, 8)
         }
         .buttonStyle(PlainButtonStyle())
     }
 }
 
 // MARK: - Data Models
-
-struct LiveMatch: Identifiable {
-    let id: String
-    let player1: String
-    let player2: String
-    let court: String
-    let timeElapsed: String
-}
 
 struct CourtAvailability: Identifiable {
     let id: String
@@ -684,7 +749,7 @@ struct CourtAvailability: Identifiable {
     }
 }
 
-struct QueueTournament: Identifiable {
+struct MockTournament: Identifiable {
     let id: String
     let name: String
     let participants: Int
@@ -774,7 +839,7 @@ struct CourtAvailabilityCard: View {
 }
 
 struct TournamentCard: View {
-    let tournament: QueueTournament
+    let tournament: MockTournament
     let action: () -> Void
     
     var body: some View {
@@ -900,7 +965,7 @@ struct TournamentDetailsView: View {
 
 struct CourtBookingView: View {
     var body: some View {
-        Text("Court Booking")
+        CourtView()
     }
 }
 
@@ -1026,4 +1091,83 @@ private struct PreviewHelper {
             .modelContainer(container)
         .environment(AppState())
     }
-} 
+}
+
+// MARK: - Enhanced Supporting Views
+
+struct EnhancedQuickMatchCard: View {
+    let matchType: MatchType
+    let playerCount: Int
+    let averageWaitTime: Int
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                // Icon and badge
+                ZStack {
+                    Circle()
+                        .fill(matchType.color.opacity(0.2))
+                        .frame(width: 60, height: 60)
+                    
+                    Image(systemName: matchType.icon)
+                        .font(.title2)
+                        .foregroundColor(matchType.color)
+                    
+                    // Player count badge
+                    Text("\(playerCount)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.red)
+                        .clipShape(Capsule())
+                        .offset(x: 25, y: -25)
+                }
+                
+                VStack(spacing: 4) {
+                    Text(matchType.rawValue)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text(matchType.description)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                        Text("~\(averageWaitTime)m")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(
+                isSelected ? 
+                matchType.color.opacity(0.1) : 
+                Color(.secondarySystemBackground)
+            )
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        isSelected ? matchType.color : Color.clear,
+                        lineWidth: 2
+                    )
+            )
+            .scaleEffect(isSelected ? 1.05 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// ... rest of the file remains unchanged ... 

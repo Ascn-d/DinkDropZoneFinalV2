@@ -88,9 +88,9 @@ private struct LeagueStatsView: View {
             GridItem(.flexible()),
             GridItem(.flexible())
         ], spacing: 16) {
-            StatCard(title: "Players", value: "\(league.players.count)/\(league.maxPlayers)")
-            StatCard(title: "Format", value: league.format.rawValue)
-            StatCard(title: "Skill Level", value: league.skillLevel ?? "All Levels")
+            LeagueStatCard(title: "Players", value: "\(league.players.count)/\(league.maxPlayers)")
+            LeagueStatCard(title: "Format", value: league.format.rawValue)
+            LeagueStatCard(title: "Skill Level", value: league.skillLevel ?? "All Levels")
         }
     }
 }
@@ -286,7 +286,7 @@ struct LeagueDetailView: View {
     }
 }
 
-struct StatCard: View {
+struct LeagueStatCard: View {
     let title: String
     let value: String
     
