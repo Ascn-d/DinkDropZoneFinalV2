@@ -1,11 +1,13 @@
 import Foundation
+import SwiftUI
 import SwiftData
 // Import the enums
 // If using modules, you may need: import DinkDropZoneFinal
 
 // MARK: - Data Structures
 
-struct DetailedUserStats {
+// DetailedUserStats is already defined in AppState.swift, so we'll use a different name
+struct DetailedUserStatsExtended {
     let overview: OverviewStats
     let performance: PerformanceStats
     let trends: TrendStats
@@ -84,7 +86,8 @@ struct DayStats {
     }
 }
 
-struct EloDataPoint {
+// EloDataPoint is already defined in AppState.swift, so we'll use a different name
+struct EloHistoryPoint {
     let date: Date
     let elo: Int
     let change: Int
@@ -92,7 +95,7 @@ struct EloDataPoint {
 
 struct MatchAnalysis {
     let matchId: String
-    let result: MatchResult
+    let result: DinkDropZoneFinal.MatchResult // Using fully qualified name
     let pointsScored: Int
     let pointsConceded: Int
     let eloChange: Int
@@ -114,7 +117,8 @@ struct PredictionFactor {
     let description: String
 }
 
-struct PerformanceInsightModel {
+// PerformanceInsightModel is already defined in AppState.swift, so we'll use a different name
+struct PerformanceInsight {
     let type: PerformanceInsightType
     let title: String
     let description: String

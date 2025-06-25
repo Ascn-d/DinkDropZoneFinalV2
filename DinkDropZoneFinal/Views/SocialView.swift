@@ -1,12 +1,13 @@
 import SwiftUI
 
 struct SocialView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var selectedCategory: SocialCategory = .feed
     @State private var showingCreatePost = false
     @State private var showingJoinLeague = false
     @State private var showingEventDetails = false
     @State private var selectedEvent: CommunityEvent? = nil
+    @State private var showingNearbyPlayers = false
     
     enum SocialCategory: String, CaseIterable {
         case feed = "Feed"
@@ -61,6 +62,9 @@ struct SocialView: View {
             }
             .sheet(isPresented: $showingJoinLeague) {
                 JoinLeagueView()
+            }
+            .sheet(isPresented: $showingNearbyPlayers) {
+                NearbyPlayersSheet(players: appState.nearbyPlayers)
             }
             .sheet(item: $selectedEvent) { event in
                 EventDetailsView(event: event)
@@ -124,9 +128,17 @@ struct SocialView: View {
                     }
                     
                     QuickActionChip(
+                        title: "Nearby Players",
+                        icon: "person.2.wave.2.fill",
+                        color: .green
+                    ) {
+                        showingNearbyPlayers = true
+                    }
+                    
+                    QuickActionChip(
                         title: "Book Court",
                         icon: "mappin.and.ellipse",
-                        color: .green
+                        color: .mint
                     ) {
                         // TODO: Navigate to court booking
                     }
@@ -721,5 +733,5 @@ struct PlayerAchievementCard: View {
 
 #Preview {
     SocialView()
-        .environment(AppState())
+        .environmentObject(AppState())
 } 

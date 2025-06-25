@@ -1,3 +1,4 @@
 import Foundation
 
-extension MatchProposal: Identifiable { } 
+// MatchProposal already conforms to Identifiable in the main definition
+// extension MatchProposal: Identifiable { } 

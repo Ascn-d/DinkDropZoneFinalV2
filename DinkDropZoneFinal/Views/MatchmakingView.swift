@@ -1,16 +1,15 @@
 import SwiftUI
-import Observation
 
 struct MatchmakingView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var isSearching = false
-    @State private var searchTime: TimeInterval = 0
+    @State private var searchTime: Int = 0
     @State private var timer: Timer?
     @State private var selectedGameMode: GameMode = .casual
     @State private var showingMatchFound = false
     @State private var matchedPlayer: User?
-    @State private var estimatedWaitTime: TimeInterval = 30
+    @State private var estimatedWaitTime: Int = 30
     
     enum GameMode: String, CaseIterable {
         case casual = "Casual"
@@ -27,7 +26,7 @@ struct MatchmakingView: View {
         
         var color: Color {
             switch self {
-            case .casual: return .blue
+            case .casual: return DS.Color.accent
             case .ranked: return .orange
             case .tournament: return .purple
             }
@@ -38,14 +37,10 @@ struct MatchmakingView: View {
         NavigationStack {
             ZStack {
                 // Background
-                LinearGradient(
-                    colors: [.blue.opacity(0.1), .purple.opacity(0.1)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
                 
-                VStack(spacing: 30) {
+                VStack(spacing: 24) {
                     // Game Mode Selection
                     gameModeSelection
                     
@@ -74,13 +69,24 @@ struct MatchmakingView: View {
                     }
                 }
             }
+            .onAppear {
+                // Update app state to reflect we're in queue
+                if !isSearching {
+                    appState.isInQueue = false
+                }
+            }
+            .onDisappear {
+                // Clean up timer when view disappears
+                timer?.invalidate()
+                timer = nil
+            }
         }
     }
     
     private var gameModeSelection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Game Mode")
-                .font(.title2)
+                .font(DS.Font.headline)
                 .fontWeight(.bold)
             
             HStack(spacing: 16) {
@@ -97,6 +103,7 @@ struct MatchmakingView: View {
                 }
             }
         }
+        .dsCard()
     }
     
     private var queueStatus: some View {
@@ -106,7 +113,7 @@ struct MatchmakingView: View {
                 Circle()
                     .stroke(
                         AngularGradient(
-                            colors: [.blue, .purple, .blue],
+                            colors: [selectedGameMode.color, selectedGameMode.color.opacity(0.5), selectedGameMode.color],
                             center: .center
                         ),
                         lineWidth: 4
@@ -126,57 +133,75 @@ struct MatchmakingView: View {
             
             // Status Text
             Text(isSearching ? "Searching for opponent..." : "Ready to play")
-                .font(.title3)
+                .font(DS.Font.title3)
                 .fontWeight(.medium)
             
             // Search Time
             if isSearching {
                 Text(formatTime(searchTime))
-                    .font(.title2)
+                    .font(DS.Font.title2)
                     .monospacedDigit()
-                    .foregroundColor(.secondary)
+                    .foregroundColor(DS.Color.secondary)
             }
             
             // Estimated Wait
             if isSearching {
                 Text("Estimated wait: \(formatTime(estimatedWaitTime))")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(DS.Font.subheadline)
+                    .foregroundColor(DS.Color.secondary)
+            }
+            
+            // Number of players in queue
+            if isSearching {
+                Text("\(Int.random(in: 15...30)) players in queue")
+                    .font(DS.Font.caption)
+                    .foregroundColor(DS.Color.secondary)
             }
         }
         .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .dsCard()
     }
     
     private var matchFoundView: some View {
         VStack(spacing: 20) {
+            Text("Match Found!")
+                .font(DS.Font.title2)
+                .fontWeight(.bold)
+                .foregroundColor(selectedGameMode.color)
+            
             if let player = matchedPlayer {
                 // Opponent Info
                 VStack(spacing: 12) {
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(selectedGameMode.color)
+                    Circle()
+                        .fill(selectedGameMode.color.opacity(0.2))
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(selectedGameMode.color)
+                        )
                     
-                    Text(player.email)
-                        .font(.title3)
+                    Text(player.displayName.isEmpty ? player.email : player.displayName)
+                        .font(DS.Font.title3)
                         .fontWeight(.medium)
                     
                     HStack(spacing: 20) {
                         StatBadge(title: "ELO", value: "\(player.elo)")
-                        StatBadge(title: "Matches", value: "\(player.xp / 100)")
+                        StatBadge(title: "Win Rate", value: player.formattedWinRate)
                     }
                 }
                 
                 // Match Type
-                Text(selectedGameMode.rawValue)
-                    .font(.headline)
-                    .foregroundColor(selectedGameMode.color)
+                HStack {
+                    Image(systemName: selectedGameMode.icon)
+                    Text(selectedGameMode.rawValue)
+                }
+                .font(DS.Font.headline)
+                .foregroundColor(selectedGameMode.color)
             }
         }
         .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .dsCard()
         .transition(.scale.combined(with: .opacity))
     }
     
@@ -191,44 +216,53 @@ struct MatchmakingView: View {
             }
         } label: {
             Text(isSearching ? "Cancel Search" : (showingMatchFound ? "Start Match" : "Find Match"))
-                .font(.headline)
+                .font(DS.Font.headline)
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
                         .fill(isSearching ? .red : selectedGameMode.color)
                 )
         }
-        .disabled(isSearching && !showingMatchFound)
     }
     
     // MARK: - Actions
     
+    @MainActor
     private func startSearch() {
         isSearching = true
         searchTime = 0
         showingMatchFound = false
+        appState.isInQueue = true
         
         // Start timer
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            searchTime += 1
-            
-            // Simulate finding a match after random time
-            if searchTime >= estimatedWaitTime && !showingMatchFound {
-                withAnimation {
-                    showingMatchFound = true
-                    // Simulate finding a player
-                    matchedPlayer = User(
-                        email: "opponent@example.com",
-                        password: "password123",
-                        elo: 1050,
-                        xp: 1500,
-                        totalMatches: 15,
-                        wins: 10,
-                        losses: 5,
-                        winStreak: 3
-                    )
+            Task { @MainActor in
+                self.searchTime += 1
+                
+                // Simulate finding a match after random time
+                if self.searchTime >= Int.random(in: 5...15) && !self.showingMatchFound {
+                    withAnimation {
+                        self.showingMatchFound = true
+                        // Find a random nearby player or create one
+                        if !self.appState.nearbyPlayers.isEmpty {
+                            self.matchedPlayer = self.appState.nearbyPlayers.randomElement()
+                        } else {
+                            // Create a sample opponent
+                            self.matchedPlayer = User(
+                                email: "opponent@example.com",
+                                password: "",
+                                displayName: "Random Player",
+                                elo: Int.random(in: 900...1200),
+                                xp: Int.random(in: 1000...2000),
+                                totalMatches: Int.random(in: 10...30),
+                                wins: Int.random(in: 5...20),
+                                losses: Int.random(in: 5...10),
+                                winStreak: Int.random(in: 0...3)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -237,21 +271,53 @@ struct MatchmakingView: View {
     private func stopSearch() {
         isSearching = false
         showingMatchFound = false
+        appState.isInQueue = false
         timer?.invalidate()
         timer = nil
     }
     
     private func startMatch() {
-        // TODO: Implement match start logic
+        // Simulate match completion
+        if let opponent = matchedPlayer, let _ = appState.currentUser {
+            let isWin = Bool.random()
+            let playerScore = isWin ? 11 : Int.random(in: 7...10)
+            let opponentScore = isWin ? Int.random(in: 5...9) : 11
+            let eloChange = isWin ? Int.random(in: 8...15) : -Int.random(in: 5...12)
+            
+            // Create match result
+            let result: DinkDropZoneFinal.MatchResult
+            if isWin {
+                result = .win(pointsScored: playerScore, pointsConceded: opponentScore, eloChange: eloChange)
+            } else {
+                result = .loss(pointsScored: playerScore, pointsConceded: opponentScore, eloChange: eloChange)
+            }
+            
+            // Create match
+            let match = GameMatch(
+                opponentName: opponent.displayName.isEmpty ? opponent.email : opponent.displayName,
+                result: isWin ? "Win" : "Loss",
+                score: "\(playerScore)-\(opponentScore)",
+                eloChange: isWin ? "+\(eloChange)" : "\(eloChange)",
+                date: Date()
+            )
+            
+            // Complete match
+            Task {
+                await appState.completeMatch(match, result: result)
+            }
+        }
+        
+        // Reset state and dismiss
+        appState.isInQueue = false
         dismiss()
     }
     
     // MARK: - Helper Functions
     
-    private func formatTime(_ timeInterval: TimeInterval) -> String {
-        let minutes = Int(timeInterval) / 60
-        let seconds = Int(timeInterval) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+    private func formatTime(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%d:%02d", minutes, secs)
     }
 }
 
@@ -264,26 +330,25 @@ struct GameModeButton: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: mode.icon)
-                    .font(.title2)
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? mode.color : DS.Color.surface)
+                        .frame(width: 60, height: 60)
+                    
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 24))
+                        .foregroundColor(isSelected ? .white : mode.color)
+                }
+                
                 Text(mode.rawValue)
-                    .font(.caption)
+                    .font(DS.Font.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundColor(isSelected ? mode.color : DS.Color.secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? mode.color.opacity(0.2) : Color.clear)
-            )
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? mode.color : .clear, lineWidth: 2)
-            )
         }
-        .foregroundColor(isSelected ? mode.color : .primary)
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
@@ -294,19 +359,21 @@ struct StatBadge: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(DS.Font.caption)
+                .foregroundColor(DS.Color.secondary)
+            
             Text(value)
-                .font(.headline)
+                .font(DS.Font.headline)
+                .foregroundColor(DS.Color.primary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
+        .background(DS.Color.surface)
+        .cornerRadius(8)
     }
 }
 
 #Preview {
     MatchmakingView()
-        .environment(AppState())
+        .environmentObject(AppState())
 } 

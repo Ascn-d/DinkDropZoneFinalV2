@@ -4,7 +4,7 @@ import SwiftData
 struct LeagueCard: View {
     let league: PickleLeague
     let onViewDetails: () -> Void
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     
     private var isJoined: Bool {
         league.players.contains { $0.id == appState.currentUser?.id }

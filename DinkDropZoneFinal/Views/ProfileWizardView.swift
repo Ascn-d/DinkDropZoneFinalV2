@@ -1,8 +1,7 @@
 import SwiftUI
-import Observation
 
 struct ProfileWizardView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var step: Int = 0
     @State private var displayName: String = ""
@@ -96,20 +95,20 @@ struct ProfileWizardView: View {
     private func handleNext() {
         if step < 2 {
             step += 1
-            return
+        } else {
+            // Save data to user
+            guard let user = user else { return }
+            user.displayName = displayName
+            user.location = location
+            user.skillLevel = skillLevel.rawValue
+            appState.markProfileComplete()
+            dismiss()
         }
-        // Save data to user
-        guard let user = user else { return }
-        user.displayName = displayName
-        user.location = location
-        user.skillLevel = skillLevel.rawValue
-        appState.markProfileComplete()
-        dismiss()
     }
 }
 
 #Preview {
     let state = AppState()
     state.currentUser = User(email: "test@demo.com", password: "", elo: 1000, xp: 0, totalMatches: 0, wins: 0, losses: 0, winStreak: 0)
-    return ProfileWizardView().environment(state)
+    return ProfileWizardView().environmentObject(state)
 } 

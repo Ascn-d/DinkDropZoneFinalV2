@@ -2,49 +2,46 @@ import SwiftUI
 import SwiftData
 
 struct MissionsView: View {
-    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     @Environment(XPManager.self) private var xpManager
     @State private var selectedTab = 0
     @State private var showTrophyUnlock = false
     @State private var unlockedTrophy: Trophy?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
-                // Custom Tab Picker
-                HStack(spacing: 0) {
-                    TabButton(
-                        title: "Missions",
-                        icon: "target",
-                        isSelected: selectedTab == 0,
-                        action: { selectedTab = 0 }
-                    )
-                    
-                    TabButton(
-                        title: "Trophies",
-                        icon: "trophy.fill",
-                        isSelected: selectedTab == 1,
-                        action: { selectedTab = 1 }
-                    )
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
+                // Progress Summary
+                missionProgressSummary
                 
-                // Content
-                TabView(selection: $selectedTab) {
-                    // Missions Tab
-                    MissionsTabView()
-                        .tag(0)
-                    
-                    // Trophies Tab
-                    TrophiesTabView()
-                        .tag(1)
+                // Tab selector
+                Picker("Mission Type", selection: $selectedTab) {
+                    Text("Daily").tag(0)
+                    Text("Weekly").tag(1)
                 }
-                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                
+                // Mission list
+                ScrollView {
+                    if selectedTab == 0 {
+                        dailyMissions
+                    } else {
+                        weeklyMissions
+                    }
+                }
             }
-            .navigationTitle("Progress")
-            .navigationBarTitleDisplayMode(.large)
-            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Missions")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .trophyUnlocked)) { notification in
             if let trophy = notification.object as? Trophy {
@@ -57,6 +54,79 @@ struct MissionsView: View {
                 TrophyUnlockView(trophy: trophy, isPresented: $showTrophyUnlock)
             }
         }
+    }
+    
+    private var missionProgressSummary: some View {
+        let missions = xpManager.getMissionsForDisplay()
+        let completedCount = missions.filter { $0.isCompleted }.count
+        let totalCount = missions.count
+        let todayXP = missions.filter { $0.isCompleted }.reduce(0) { $0 + $1.xpReward }
+        
+        return MissionProgressSummary(
+            completedCount: completedCount,
+            totalCount: totalCount,
+            todayXP: todayXP
+        )
+        .padding()
+        .dsCard()
+        .padding(.horizontal)
+    }
+    
+    private var dailyMissions: some View {
+        let dailyMissions = xpManager.getMissionsForDisplay().filter { $0.type.isDaily }
+        
+        return VStack(spacing: 16) {
+            if dailyMissions.isEmpty {
+                emptyMissionsView(message: "All daily missions completed! Check back tomorrow for new missions.")
+            } else {
+                ForEach(dailyMissions) { mission in
+                    MissionCard(mission: mission)
+                        .padding(.horizontal)
+                }
+            }
+            
+            Spacer(minLength: 50)
+        }
+        .padding(.vertical)
+    }
+    
+    private var weeklyMissions: some View {
+        let weeklyMissions = xpManager.getMissionsForDisplay().filter { $0.type.isWeekly }
+        
+        return VStack(spacing: 16) {
+            if weeklyMissions.isEmpty {
+                emptyMissionsView(message: "All weekly missions completed! Check back next week for new missions.")
+            } else {
+                ForEach(weeklyMissions) { mission in
+                    MissionCard(mission: mission)
+                        .padding(.horizontal)
+                }
+            }
+            
+            Spacer(minLength: 50)
+        }
+        .padding(.vertical)
+    }
+    
+    private func emptyMissionsView(message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.green)
+            
+            Text("All Completed!")
+                .font(DS.Font.title2)
+                .fontWeight(.bold)
+                .foregroundColor(DS.Color.primary)
+            
+            Text(message)
+                .font(DS.Font.body)
+                .foregroundColor(DS.Color.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 50)
     }
 }
 
@@ -88,184 +158,6 @@ struct TabButton: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-    }
-}
-
-// MARK: - Missions Tab View
-
-struct MissionsTabView: View {
-    @Environment(XPManager.self) private var xpManager
-    
-    var activeMissions: [Mission] {
-        xpManager.getMissionsForDisplay()
-    }
-    
-    var dailyMissions: [Mission] {
-        activeMissions.filter { $0.type.isDaily }
-    }
-    
-    var weeklyMissions: [Mission] {
-        activeMissions.filter { $0.type.isWeekly }
-    }
-    
-    var achievementMissions: [Mission] {
-        activeMissions.filter { $0.type.isAchievement }
-    }
-    
-    var completedToday: Int {
-        xpManager.completedMissions.filter { mission in
-            guard let completedAt = mission.completedAt else { return false }
-            return Calendar.current.isDateInToday(completedAt)
-        }.count
-    }
-    
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 20) {
-                // Progress Summary
-                MissionProgressSummary(
-                    completedCount: completedToday,
-                    totalCount: activeMissions.count,
-                    todayXP: xpManager.dailyStats.xpEarned
-                )
-                .padding(.horizontal)
-                
-                // XP and Level Info
-                XPProgressCard()
-                    .padding(.horizontal)
-                
-                // Daily Missions
-                if !dailyMissions.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(
-                            title: "Daily Missions",
-                            subtitle: "Reset at midnight",
-                            icon: "sun.max.fill",
-                            color: .blue
-                        )
-                        
-                        LazyVStack(spacing: 12) {
-                            ForEach(dailyMissions) { mission in
-                                MissionCard(mission: mission)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Weekly Missions
-                if !weeklyMissions.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(
-                            title: "Weekly Missions",
-                            subtitle: "Reset on Monday",
-                            icon: "calendar.badge.clock",
-                            color: .purple
-                        )
-                        
-                        LazyVStack(spacing: 12) {
-                            ForEach(weeklyMissions) { mission in
-                                MissionCard(mission: mission)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Achievement Missions
-                if !achievementMissions.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(
-                            title: "Achievement Missions",
-                            subtitle: "Long-term goals",
-                            icon: "star.circle.fill",
-                            color: .orange
-                        )
-                        
-                        LazyVStack(spacing: 12) {
-                            ForEach(achievementMissions) { mission in
-                                MissionCard(mission: mission)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Empty State
-                if activeMissions.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(.green)
-                        
-                        Text("All Missions Complete!")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Text("Great job! New missions will be available soon.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        
-                        Button("Check Back Later") {
-                            // Refresh missions
-                            xpManager.generateDailyMissions()
-                        }
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 30)
-                        .padding(.vertical, 12)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 40)
-                }
-            }
-            .padding(.vertical)
-        }
-    }
-}
-
-// MARK: - Trophies Tab View
-
-struct TrophiesTabView: View {
-    @Environment(XPManager.self) private var xpManager
-    
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 20) {
-                // Trophy Collection
-                TrophyCollectionView(unlockedTrophies: xpManager.unlockedTrophies)
-                    .padding(.horizontal)
-                
-                // Recent Trophies
-                if !xpManager.getRecentTrophies().isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(
-                            title: "Recent Unlocks",
-                            subtitle: "Last 7 days",
-                            icon: "sparkles",
-                            color: .orange
-                        )
-                        
-                        LazyVStack(spacing: 8) {
-                            ForEach(xpManager.getRecentTrophies()) { trophy in
-                                CompactTrophyCard(trophy: trophy)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Trophy Categories
-                TrophyCategoriesView()
-                    .padding(.horizontal)
-            }
-            .padding(.vertical)
-        }
     }
 }
 
@@ -422,32 +314,32 @@ struct TrophyCategoriesView: View {
                     title: "Match Trophies",
                     icon: "gamecontroller.fill",
                     color: .blue,
-                    count: xpManager.unlockedTrophies.filter { TrophyType.matchTrophies.contains($0.type) }.count,
-                    total: TrophyType.matchTrophies.count
+                    count: xpManager.unlockedTrophies.filter { $0.category == .gameplay }.count,
+                    total: 5 // Approximate count for gameplay achievements
                 )
                 
                 CategoryCard(
                     title: "Social Trophies",
                     icon: "person.3.fill",
                     color: .green,
-                    count: xpManager.unlockedTrophies.filter { TrophyType.socialTrophies.contains($0.type) }.count,
-                    total: TrophyType.socialTrophies.count
+                    count: xpManager.unlockedTrophies.filter { $0.category == .social }.count,
+                    total: 4 // Approximate count for social achievements
                 )
                 
                 CategoryCard(
                     title: "Level Trophies",
                     icon: "star.fill",
                     color: .orange,
-                    count: xpManager.unlockedTrophies.filter { TrophyType.levelTrophies.contains($0.type) }.count,
-                    total: TrophyType.levelTrophies.count
+                    count: xpManager.unlockedTrophies.filter { $0.category == .progression }.count,
+                    total: 6 // Approximate count for progression achievements
                 )
                 
                 CategoryCard(
                     title: "Special Trophies",
                     icon: "sparkles",
                     color: .purple,
-                    count: xpManager.unlockedTrophies.filter { TrophyType.specialTrophies.contains($0.type) }.count,
-                    total: TrophyType.specialTrophies.count
+                    count: xpManager.unlockedTrophies.filter { $0.category == .secret }.count,
+                    total: 3 // Approximate count for secret achievements
                 )
             }
         }
@@ -525,6 +417,6 @@ struct CategoryCard: View {
 
 #Preview {
     MissionsView()
-        .environment(AppState())
+        .environmentObject(AppState())
         .environment(XPManager(modelContext: ModelContext(try! ModelContainer(for: User.self))))
 }

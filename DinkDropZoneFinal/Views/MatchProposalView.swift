@@ -1,11 +1,10 @@
 import SwiftUI
-import Observation
 
 struct MatchProposalView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     
-    let proposal: MatchProposal
+    let proposal: DinkDropZoneFinal.MMMatchProposal
     
     // Countdown
     @State private var timeRemaining: Int = 30
@@ -95,7 +94,7 @@ struct MatchProposalView: View {
 }
 
 private struct PlayerRow: View {
-    let entry: QueueEntry
+    let entry: DinkDropZoneFinal.MMQueueEntry
     let isCurrentUser: Bool
     
     var body: some View {
@@ -114,9 +113,30 @@ private struct PlayerRow: View {
 #Preview {
     let state = AppState()
     let u1 = User(email: "a@a.com", password: "", elo: 1000, xp: 0, totalMatches: 0, wins: 0, losses: 0, winStreak: 0)
-    let entry = QueueEntry(user: u1, joinTime: Date(), preferredMatchType: .singles, eloRange: 900...1100)
-    let proposal = MatchProposal(id: UUID(), potentialMatch: PotentialMatch(players: [entry], matchType: .singles, compatibility: 1), proposedAt: Date(), expiresAt: Date().addingTimeInterval(30), responses: [:])
+    
+    // Create entry with explicit constructor parameters
+    let entry = DinkDropZoneFinal.MMQueueEntry(
+        user: u1, 
+        joinTime: Date(), 
+        preferredMatchType: DinkDropZoneFinal.MatchType.singles, 
+        eloRange: 900...1100
+    )
+    
+    let proposal = DinkDropZoneFinal.MMMatchProposal(
+        id: UUID(), 
+        potentialMatch: DinkDropZoneFinal.MMPotentialMatch(
+            players: [entry], 
+            matchType: DinkDropZoneFinal.MatchType.singles, 
+            compatibility: 1
+        ), 
+        proposedAt: Date(), 
+        expiresAt: Date().addingTimeInterval(30), 
+        responses: [:]
+    )
+    
     state.matchProposal = proposal
     state.currentUser = u1
-    return MatchProposalView(proposal: proposal).environment(state)
+    
+    return MatchProposalView(proposal: proposal)
+        .environmentObject(state)
 } 

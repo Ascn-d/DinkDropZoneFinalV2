@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import Observation
 import Combine
 import FirebaseAuth
 
@@ -224,7 +223,7 @@ private struct LeagueMatchesView: View {
 struct LeagueDetailView: View {
     let league: PickleLeague
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var showingJoinAlert = false
     @State private var showingStartAlert = false
     

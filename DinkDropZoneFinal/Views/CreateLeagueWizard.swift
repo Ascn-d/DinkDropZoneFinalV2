@@ -1,10 +1,9 @@
 import SwiftUI
 import SwiftData
-import Observation
 
 struct CreateLeagueWizard: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     
     enum Step: Int { case name = 0, settings, details, review }
     @State private var step: Step = .name
@@ -138,7 +137,8 @@ struct CreateLeagueWizard: View {
               let api = appState.getNetworkService() else { return }
         Task {
             do {
-                let dto = try await api.createLeague(.init(
+                // Use NetworkService.CreateLeagueBody instead of a local LeagueDTO struct
+                let dto = try await api.createLeague(NetworkService.CreateLeagueBody(
                     name: name,
                     description: description,
                     location: "Downtown Courts", // TODO: Add location picker
@@ -146,9 +146,9 @@ struct CreateLeagueWizard: View {
                     maxParticipants: maxParticipants,
                     price: 49.99, // TODO: Add price field
                     rating: 0.0,
-                    imageUrl: nil,
+                    imageUrl: nil as String?,
                     schedule: "Mon/Wed 6-8pm", // TODO: Add schedule picker
-                    nextGame: nil,
+                    nextGame: nil as String?,
                     tags: ["Competitive", "Beginner Friendly"], // TODO: Add tag picker
                     skillLevel: "Beginner" // TODO: Add skill level picker
                 ))
@@ -169,9 +169,9 @@ struct CreateLeagueWizard: View {
                     maxParticipants: maxParticipants,
                     price: 49.99,
                     rating: 0.0,
-                    imageUrl: nil,
+                    imageUrl: nil as String?,
                     schedule: "Mon/Wed 6-8pm",
-                    nextGame: nil,
+                    nextGame: nil as String?,
                     tags: ["Competitive", "Beginner Friendly"],
                     skillLevel: "Beginner"
                 )
@@ -186,5 +186,5 @@ struct CreateLeagueWizard: View {
 #Preview {
     let state = AppState()
     state.currentUser = User(email: "demo", password: "", elo: 1000, xp: 0, totalMatches: 0, wins: 0, losses: 0, winStreak: 0)
-    return CreateLeagueWizard().environment(state)
+    return CreateLeagueWizard().environmentObject(state)
 } 

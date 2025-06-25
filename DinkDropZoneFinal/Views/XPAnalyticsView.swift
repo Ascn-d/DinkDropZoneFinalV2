@@ -93,10 +93,10 @@ struct XPAnalyticsView: View {
                 AnalyticsStatCard(
                     title: "Trophies",
                     value: "\(xpManager.unlockedTrophies.count)",
-                    subtitle: "of \(TrophyType.allCases.count) unlocked",
+                    subtitle: "of \(20) unlocked", // Approximate total achievements
                     icon: "trophy.fill",
                     color: .yellow,
-                    progress: Double(xpManager.unlockedTrophies.count) / Double(TrophyType.allCases.count)
+                    progress: Double(xpManager.unlockedTrophies.count) / Double(20)
                 )
             }
         }
@@ -291,21 +291,21 @@ struct XPAnalyticsView: View {
                 
                 Spacer()
                 
-                Text("\(xpManager.unlockedTrophies.count)/\(TrophyType.allCases.count)")
+                Text("\(xpManager.unlockedTrophies.count)/20") // Approximate total achievements
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.secondary)
             }
             
             VStack(spacing: 12) {
-                ForEach(TrophyRarity.allCases, id: \.self) { rarity in
-                    let trophiesOfRarity = xpManager.unlockedTrophies.filter { $0.rarity == rarity }
-                    let totalOfRarity = TrophyType.allCases.filter { $0.rarity == rarity }.count
+                ForEach(AchievementTier.allCases, id: \.self) { tier in
+                    let trophiesOfTier = xpManager.unlockedTrophies.filter { $0.tier == tier }
+                    let totalOfTier = 4 // Approximate count per tier
                     
-                    TrophyRarityRow(
-                        rarity: rarity,
-                        unlocked: trophiesOfRarity.count,
-                        total: totalOfRarity
+                    TrophyTierRow(
+                        tier: tier,
+                        unlocked: trophiesOfTier.count,
+                        total: totalOfTier
                     )
                 }
             }
@@ -527,8 +527,8 @@ struct CircularProgressView: View {
     }
 }
 
-struct TrophyRarityRow: View {
-    let rarity: TrophyRarity
+struct TrophyTierRow: View {
+    let tier: AchievementTier
     let unlocked: Int
     let total: Int
     
@@ -537,25 +537,14 @@ struct TrophyRarityRow: View {
         return Double(unlocked) / Double(total)
     }
     
-    private var rarityColor: Color {
-        switch rarity.color {
-        case "gray": return .gray
-        case "green": return .green
-        case "blue": return .blue
-        case "purple": return .purple
-        case "orange": return .orange
-        default: return .gray
-        }
-    }
-    
     var body: some View {
         HStack {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(rarityColor)
+                    .fill(tier.color)
                     .frame(width: 12, height: 12)
                 
-                Text(rarity.title)
+                Text(tier.rawValue)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
@@ -569,7 +558,7 @@ struct TrophyRarityRow: View {
                 .foregroundColor(.secondary)
             
             ProgressView(value: progress)
-                .progressViewStyle(LinearProgressViewStyle(tint: rarityColor))
+                .progressViewStyle(LinearProgressViewStyle(tint: tier.color))
                 .frame(width: 60)
                 .scaleEffect(x: 1, y: 0.5)
         }
@@ -582,30 +571,19 @@ struct AchievementTimelineRow: View {
     private var timeAgo: String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: trophy.unlockedAt, relativeTo: Date())
-    }
-    
-    private var rarityColor: Color {
-        switch trophy.rarity.color {
-        case "gray": return .gray
-        case "green": return .green
-        case "blue": return .blue
-        case "purple": return .purple
-        case "orange": return .orange
-        default: return .gray
-        }
+        return formatter.localizedString(for: trophy.unlockedAt ?? Date(), relativeTo: Date())
     }
     
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(rarityColor.opacity(0.2))
+                    .fill(trophy.tier.color.opacity(0.2))
                     .frame(width: 40, height: 40)
                 
                 Image(systemName: trophy.icon)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(rarityColor)
+                    .foregroundColor(trophy.tier.color)
             }
             
             VStack(alignment: .leading, spacing: 2) {
@@ -627,10 +605,10 @@ struct AchievementTimelineRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
-                Text(trophy.rarity.title)
+                Text(trophy.tier.rawValue)
                     .font(.caption2)
                     .fontWeight(.medium)
-                    .foregroundColor(rarityColor)
+                    .foregroundColor(trophy.tier.color)
             }
         }
     }

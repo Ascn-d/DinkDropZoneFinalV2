@@ -3,7 +3,7 @@ import SwiftData
 
 struct MatchHistoryCard: View {
     let match: Match
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -133,6 +133,6 @@ private struct PreviewHelper {
         return MatchHistoryCard(match: match)
             .padding()
             .modelContainer(container)
-            .environment(AppState())
+            .environmentObject(AppState())
     }
 } 

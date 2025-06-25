@@ -1,6 +1,5 @@
 import Foundation
 import CoreLocation
-import Observation
 
 @Observable
 final class UserLocationService: NSObject, CLLocationManagerDelegate {

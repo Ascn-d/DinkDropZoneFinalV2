@@ -1,9 +1,8 @@
 import SwiftUI
 import AuthenticationServices
-import Observation
 
 struct AuthView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @Environment(\._openURL) private var openURL
     @Environment(\.modelContext) private var modelContext
     @State private var isLoading = false
@@ -361,5 +360,5 @@ struct TypewriterText: View {
 
 #Preview {
     AuthView()
-        .environment(AppState())
+        .environmentObject(AppState())
 } 

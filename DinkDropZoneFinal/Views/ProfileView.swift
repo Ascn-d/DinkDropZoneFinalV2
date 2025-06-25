@@ -1,15 +1,20 @@
 import SwiftUI
 import SwiftData
-import Observation
 import PhotosUI
+import OSLog
+import UIKit
 
 struct ProfileView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @Query private var allMatches: [Match]
     @State private var isEditingProfile = false
-    @State private var selectedItem: PhotosPickerItem?
+    @State private var selectedItem: PhotosPickerItem? = nil
     @State private var showingMatchHistory = false
     @State private var showingAllAchievements = false
+    @State private var isRefreshing = false
+    @State private var isUploadingImage = false
+    @State private var uploadError: String? = nil
+    @State private var showingUploadError = false
     
     // Helper to get matches for current user
     private var userMatches: [Match] {
@@ -21,46 +26,57 @@ struct ProfileView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Header Section with Avatar and Basic Info
+            DSPageTemplate(
+                title: "Profile",
+                onRefresh: refreshUserData,
+                headerContent: {
                     profileHeaderSection
-                    
-                    // Level and XP Section
-                    levelProgressSection
-                    
-                    // Quick Stats Cards
-                    quickStatsSection
-                    
-                    // Daily Challenges Section
-                    dailyChallengesSection
-                    
-                    // Training Partner Section
-                    trainingPartnerSection
-                    
-                    // Streaks & Milestones Section
-                    streaksSection
-                    
-                    // Shot Mastery Section
-                    shotMasterySection
-                    
-                    // Bio Section
-                    bioSection
-                    
-                    // Achievements & Badges Section
-                    achievementsBadgesSection
-                    
-                    // Recent Activity Section
-                    recentActivitySection
-                    
-                    // Detailed Stats Section
-                    detailedStatsSection
+                }
+            ) {
+                // Level and XP Section
+                levelProgressSection
+                
+                // Quick Stats Section
+                DSSectionContainer(title: "Quick Stats") {
+                    if let user = appState.currentUser {
+                        quickStatsGrid(user: user)
+                    }
+                }
+                
+                // Daily Challenges Section
+                DSSectionContainer(title: "Daily Challenges") {
+                    dailyChallengesContent
+                }
+                
+                // Achievements Section
+                DSSectionContainer(
+                    title: "Achievements", 
+                    action: { showingAllAchievements = true }
+                ) {
+                    achievementsContent
+                }
+                
+                // Recent Activity Section
+                DSSectionContainer(
+                    title: "Recent Activity", 
+                    action: userMatches.isEmpty ? nil : { showingMatchHistory = true }
+                ) {
+                    recentActivityContent
+                }
+                
+                // Detailed Stats Section
+                DSSectionContainer(title: "Detailed Statistics") {
+                    detailedStatsContent
                 }
             }
-            .navigationTitle("Profile")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        shareProfile()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+
                     Button {
                         isEditingProfile = true
                     } label: {
@@ -86,6 +102,11 @@ struct ProfileView: View {
             .sheet(isPresented: $showingAllAchievements) {
                 AchievementsView()
             }
+            .alert("Upload Error", isPresented: $showingUploadError) {
+                Button("OK") { uploadError = nil }
+            } message: {
+                Text(uploadError ?? "Unknown error occurred")
+            }
         }
     }
     
@@ -96,12 +117,8 @@ struct ProfileView: View {
             if let user = appState.currentUser {
                 // Background gradient
                 ZStack {
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.4)]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .frame(height: 220)
+                    DS.Color.headerGradient
+                        .frame(height: 220)
                     
                     VStack(spacing: 16) {
                         // Profile Image with Level Border
@@ -117,30 +134,112 @@ struct ProfileView: View {
                                 )
                                 .frame(width: 120, height: 120)
                             
-                            if let imageURL = user.profileImageURL {
-                                AsyncImage(url: URL(string: imageURL)) { image in
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                } placeholder: {
-                                    Image(systemName: "person.circle.fill")
-                                        .resizable()
-                                        .foregroundColor(.white)
-                                }
-                                .frame(width: 110, height: 110)
-                                .clipShape(Circle())
-                            } else {
-                                Image(systemName: "person.circle.fill")
-                                    .resizable()
+                            PhotosPicker(selection: $selectedItem, matching: .images) {
+                                if let imageURL = user.profileImageURL {
+                                    AsyncImage(url: URL(string: imageURL)) { image in
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                    } placeholder: {
+                                        Image(systemName: "person.circle.fill")
+                                            .resizable()
+                                            .foregroundColor(.white)
+                                    }
                                     .frame(width: 110, height: 110)
-                                    .foregroundColor(.white)
+                                    .clipShape(Circle())
+                                    .overlay(
+                                        Circle()
+                                            .fill(Color.black.opacity(0.3))
+                                            .frame(width: 110, height: 110)
+                                            .overlay(
+                                                Image(systemName: "camera.fill")
+                                                    .font(.title2)
+                                                    .foregroundColor(.white)
+                                            )
+                                            .opacity(0) // Hidden by default, will show on hover/press
+                                    )
+                                } else {
+                                    ZStack {
+                                        Image(systemName: "person.circle.fill")
+                                            .resizable()
+                                            .frame(width: 110, height: 110)
+                                            .foregroundColor(.white)
+                                        
+                                        Circle()
+                                            .fill(Color.black.opacity(0.3))
+                                            .frame(width: 110, height: 110)
+                                            .overlay(
+                                                VStack(spacing: 4) {
+                                                    Image(systemName: "camera.fill")
+                                                        .font(.title2)
+                                                    Text("Add Photo")
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                }
+                                                .foregroundColor(.white)
+                                            )
+                                    }
+                                }
+                            }
+                            .onChange(of: selectedItem) { _, newItem in
+                                Task {
+                                    await MainActor.run {
+                                        isUploadingImage = true
+                                        uploadError = nil
+                                    }
+                                    
+                                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                                       let uiImage = UIImage(data: data) {
+                                        do {
+                                            try await appState.updateProfileImage(uiImage)
+                                            LoggingService.shared.log("Profile image updated successfully")
+                                        } catch {
+                                            let errorMessage = error.localizedDescription
+                                            LoggingService.shared.logError(error, context: "Profile image update")
+                                            
+                                            await MainActor.run {
+                                                uploadError = errorMessage
+                                                showingUploadError = true
+                                            }
+                                        }
+                                    } else {
+                                        await MainActor.run {
+                                            uploadError = "Failed to load selected image"
+                                            showingUploadError = true
+                                        }
+                                    }
+                                    
+                                    await MainActor.run {
+                                        isUploadingImage = false
+                                        selectedItem = nil
+                                    }
+                                }
+                            }
+                            .disabled(isUploadingImage)
+                            
+                            // Loading overlay
+                            if isUploadingImage {
+                                Circle()
+                                    .fill(Color.black.opacity(0.5))
+                                    .frame(width: 110, height: 110)
+                                    .overlay(
+                                        VStack(spacing: 8) {
+                                            ProgressView()
+                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                .scaleEffect(1.2)
+                                            
+                                            Text("Uploading...")
+                                                .font(.caption)
+                                                .foregroundColor(.white)
+                                        }
+                                    )
                             }
                             
                             // Level Badge
                             VStack {
                                 Spacer()
-                    HStack {
-                        Spacer()
+                                HStack {
+                                    Spacer()
                                     Text("\(XPManager.calculateLevel(from: user.xp))")
                                         .font(.caption)
                                         .fontWeight(.bold)
@@ -160,7 +259,7 @@ struct ProfileView: View {
                         // Name and Skill Level
                         VStack(spacing: 4) {
                             Text(user.displayName.isEmpty ? user.email.components(separatedBy: "@").first ?? "Player" : user.displayName)
-                                .font(.title2)
+                                .font(DS.Font.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
                             
@@ -188,6 +287,24 @@ struct ProfileView: View {
                                     .foregroundColor(.white.opacity(0.9))
                                 }
                             }
+                            
+                            // Share Profile Button
+                            Button(action: shareProfile) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "square.and.arrow.up")
+                                    Text("Share Profile")
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.white.opacity(0.3))
+                                        .shadow(radius: 1)
+                                )
+                                .foregroundColor(.white)
+                            }
+                            .padding(.top, 8)
                         }
                     }
                     .padding(.top, 20)
@@ -202,592 +319,241 @@ struct ProfileView: View {
         VStack(spacing: 12) {
             if let user = appState.currentUser {
                 let currentLevel = XPManager.calculateLevel(from: user.xp)
-                let nextLevelXP = calculateXPForLevel(currentLevel + 1)
-                let currentLevelXP = calculateXPForLevel(currentLevel)
+                let nextLevelXP = XPManager.xpRequiredForLevel(currentLevel + 1)
+                let currentLevelXP = XPManager.xpRequiredForLevel(currentLevel)
                 let rawProgress = Double(user.xp - currentLevelXP) / Double(nextLevelXP - currentLevelXP)
                 let progress = min(max(rawProgress, 0), 1)
                 
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Level \(currentLevel)")
-                            .font(.headline)
+                            .font(DS.Font.headline)
                             .fontWeight(.bold)
                         
                         Text("\(user.xp - currentLevelXP) / \(nextLevelXP - currentLevelXP) XP")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(DS.Font.caption)
+                            .foregroundColor(DS.Color.secondary)
                     }
                     
                     Spacer()
                     
                     Text("Total XP: \(user.xp)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(DS.Font.caption)
+                        .foregroundColor(DS.Color.secondary)
                 }
                 
-                ProgressView(value: progress)
-                    .progressViewStyle(LinearProgressViewStyle(tint: .orange))
-                    .scaleEffect(x: 1, y: 2, anchor: .center)
+                DSProgressBar(value: progress, color: .orange)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .background(Color(.systemBackground))
+        .dsHorizontalPadding()
+        .dsCard()
     }
     
-    // MARK: - Quick Stats Section
+    // MARK: - Quick Stats Grid
     
-    private var quickStatsSection: some View {
-        VStack(spacing: 16) {
-            if let user = appState.currentUser {
-                HStack {
-                    Text("Quick Stats")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    Spacer()
-                }
-                
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    QuickStatBadge(
-                        title: "ELO",
-                        value: "\(user.elo)",
-                        icon: "star.fill",
-                        color: eloColor(for: user.elo),
-                        gradient: true
-                    )
-                    
-                    QuickStatBadge(
-                        title: "Win Rate",
-                        value: user.formattedWinRate,
-                        icon: "chart.line.uptrend.xyaxis",
-                        color: winRateColor(for: user.winRate),
-                        gradient: true
-                    )
-                    
-                    QuickStatBadge(
-                        title: "Matches",
-                        value: "\(user.totalMatches)",
-                        icon: "gamecontroller.fill",
-                        color: .blue,
-                        gradient: false
-                    )
-                    
-                    QuickStatBadge(
-                        title: "Win Streak",
-                        value: "\(user.winStreak)",
-                        icon: "flame.fill",
-                        color: user.winStreak > 0 ? .orange : .gray,
-                        gradient: user.winStreak > 0
-                    )
-                    
-                    QuickStatBadge(
-                        title: "Best Streak",
-                        value: "\(user.longestWinStreak)",
-                        icon: "bolt.fill",
-                        color: .yellow,
-                        gradient: true
-                    )
-                    
-                    QuickStatBadge(
-                        title: "Points +/-",
-                        value: "\(user.pointsDifferential > 0 ? "+" : "")\(user.pointsDifferential)",
-                        icon: user.pointsDifferential > 0 ? "plus.circle.fill" : "minus.circle.fill",
-                        color: user.pointsDifferential > 0 ? .green : .red,
-                        gradient: true
-                    )
-                }
-            }
+    private func quickStatsGrid(user: User) -> some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible()),
+            GridItem(.flexible()),
+            GridItem(.flexible())
+        ], spacing: 12) {
+            QuickStatBadge(
+                title: "ELO",
+                value: "\(user.elo)",
+                icon: "star.fill",
+                color: eloColor(for: user.elo),
+                gradient: true
+            )
+            
+            QuickStatBadge(
+                title: "Win Rate",
+                value: user.formattedWinRate,
+                icon: "chart.line.uptrend.xyaxis",
+                color: winRateColor(for: user.winRate),
+                gradient: true
+            )
+            
+            QuickStatBadge(
+                title: "Matches",
+                value: "\(user.totalMatches)",
+                icon: "gamecontroller.fill",
+                color: .blue,
+                gradient: false
+            )
+            
+            QuickStatBadge(
+                title: "Win Streak",
+                value: "\(user.winStreak)",
+                icon: "flame.fill",
+                color: user.winStreak > 0 ? .orange : .gray,
+                gradient: user.winStreak > 0
+            )
+            
+            QuickStatBadge(
+                title: "Best Streak",
+                value: "\(user.longestWinStreak)",
+                icon: "bolt.fill",
+                color: .yellow,
+                gradient: true
+            )
+            
+            QuickStatBadge(
+                title: "Points +/-",
+                value: "\(user.pointsDifferential > 0 ? "+" : "")\(user.pointsDifferential)",
+                icon: user.pointsDifferential > 0 ? "plus.circle.fill" : "minus.circle.fill",
+                color: user.pointsDifferential > 0 ? .green : .red,
+                gradient: true
+            )
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
     }
     
-    // MARK: - Daily Challenges Section
+    // MARK: - Daily Challenges Content
     
-    private var dailyChallengesSection: some View {
-        VStack(spacing: 16) {
-            if let _ = appState.currentUser {
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "calendar.badge.exclamationmark")
-                            .foregroundColor(.orange)
-                        Text("Daily Challenges")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                    }
-                    Spacer()
-                    Text("2/3 Complete")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.orange.opacity(0.2)))
-                }
-                
-                VStack(spacing: 8) {
-                    ProfileDailyChallengeCard(
-                        title: "Play a Match",
-                        description: "Complete 1 match today",
-                        progress: 1.0,
-                        reward: "+50 XP",
-                        isCompleted: true,
-                        icon: "gamecontroller.fill"
-                    )
-                    
-                    ProfileDailyChallengeCard(
-                        title: "Win a Game",
-                        description: "Win 1 game today",
-                        progress: 1.0,
-                        reward: "+75 XP",
-                        isCompleted: true,
-                        icon: "trophy.fill"
-                    )
-                    
-                    ProfileDailyChallengeCard(
-                        title: "Social Player",
-                        description: "Play with 2 different opponents",
-                        progress: 0.5,
-                        reward: "+100 XP",
-                        isCompleted: false,
-                        icon: "person.2.fill"
-                    )
-                }
+    private var dailyChallengesContent: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Spacer()
+                Text("2/3 Complete")
+                    .font(DS.Font.caption)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.orange.opacity(0.2)))
             }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
-    }
-    
-    // MARK: - Training Partner Section
-    
-    private var trainingPartnerSection: some View {
-        VStack(spacing: 16) {
-            if let _ = appState.currentUser {
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "person.badge.plus")
-                            .foregroundColor(.blue)
-                        Text("Training Partner")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                    }
-                    Spacer()
-                    Button("Change") {
-                        // TODO: Implement partner selection
-                    }
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                }
+            
+            VStack(spacing: 8) {
+                ProfileDailyChallengeCard(
+                    title: "Play a Match",
+                    description: "Complete 1 match today",
+                    progress: 1.0,
+                    reward: "+50 XP",
+                    isCompleted: true,
+                    icon: "gamecontroller.fill"
+                )
                 
-                TrainingPartnerCard(
-                    name: "Sarah Chen",
-                    skillLevel: "Advanced",
-                    matchesPlayed: 12,
-                    winRate: 0.75,
-                    lastPlayed: "2 days ago",
-                    partnershipDays: 45,
-                    profileImage: nil
+                ProfileDailyChallengeCard(
+                    title: "Win a Game",
+                    description: "Win 1 game today",
+                    progress: 1.0,
+                    reward: "+75 XP",
+                    isCompleted: true,
+                    icon: "trophy.fill"
+                )
+                
+                ProfileDailyChallengeCard(
+                    title: "Social Player",
+                    description: "Play with 2 different opponents",
+                    progress: 0.5,
+                    reward: "+100 XP",
+                    isCompleted: false,
+                    icon: "person.2.fill"
                 )
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
     }
     
-    // MARK: - Streaks Section
+    // MARK: - Achievements Content
     
-    private var streaksSection: some View {
-        VStack(spacing: 16) {
-            if let _ = appState.currentUser {
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "flame.fill")
-                            .foregroundColor(.orange)
-                        Text("Streaks & Milestones")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                    }
-                    Spacer()
-                }
-                
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    StreakCard(
-                        title: "Daily Play",
-                        value: "7",
-                        subtitle: "days",
-                        icon: "calendar.circle.fill",
-                        color: .green,
-                        isActive: true
-                    )
-                    
-                    StreakCard(
-                        title: "Weekly Win",
-                        value: "3",
-                        subtitle: "weeks",
-                        icon: "trophy.circle.fill",
-                        color: .blue,
-                        isActive: true
-                    )
-                    
-                    StreakCard(
-                        title: "Social Streak",
-                        value: "12",
-                        subtitle: "new players",
-                        icon: "person.2.circle.fill",
-                        color: .purple,
-                        isActive: false
-                    )
-                    
-                    StreakCard(
-                        title: "Court Explorer",
-                        value: "5",
-                        subtitle: "courts",
-                        icon: "map.circle.fill",
-                        color: .orange,
-                        isActive: false
-                    )
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
-    }
-    
-    // MARK: - Shot Mastery Section
-    
-    private var shotMasterySection: some View {
-        VStack(spacing: 16) {
-            if let _ = appState.currentUser {
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "target")
-                            .foregroundColor(.purple)
-                        Text("Shot Mastery")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                    }
-                    Spacer()
-                    Text("8/12 Shots")
-                        .font(.caption)
-                        .foregroundColor(.purple)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.purple.opacity(0.2)))
-                }
-                
-                VStack(spacing: 12) {
-                    // Mastered shots
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 8) {
-                        ShotMasteryBadge(
-                            name: "Dink",
-                            icon: "hand.point.down.fill",
-                            mastery: 1.0,
-                            isUnlocked: true,
-                            color: .green
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Drive",
-                            icon: "arrow.right.circle.fill",
-                            mastery: 1.0,
-                            isUnlocked: true,
-                            color: .blue
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Lob",
-                            icon: "arrow.up.circle.fill",
-                            mastery: 1.0,
-                            isUnlocked: true,
-                            color: .orange
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Drop",
-                            icon: "arrow.down.circle.fill",
-                            mastery: 0.8,
-                            isUnlocked: true,
-                            color: .purple
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Volley",
-                            icon: "bolt.circle.fill",
-                            mastery: 0.6,
-                            isUnlocked: true,
-                            color: .yellow
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Serve",
-                            icon: "figure.tennis",
-                            mastery: 0.9,
-                            isUnlocked: true,
-                            color: .red
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Smash",
-                            icon: "bolt.fill",
-                            mastery: 0.4,
-                            isUnlocked: true,
-                            color: .pink
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Slice",
-                            icon: "rotate.3d",
-                            mastery: 0.7,
-                            isUnlocked: true,
-                            color: .cyan
-                        )
-                        
-                        // Locked shots
-                        ShotMasteryBadge(
-                            name: "Erne",
-                            icon: "figure.badminton",
-                            mastery: 0.0,
-                            isUnlocked: false,
-                            color: .gray
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "ATP",
-                            icon: "arrow.triangle.2.circlepath",
-                            mastery: 0.0,
-                            isUnlocked: false,
-                            color: .gray
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Tweener",
-                            icon: "figure.gymnastics",
-                            mastery: 0.0,
-                            isUnlocked: false,
-                            color: .gray
-                        )
-                        
-                        ShotMasteryBadge(
-                            name: "Spin Serve",
-                            icon: "tornado",
-                            mastery: 0.0,
-                            isUnlocked: false,
-                            color: .gray
-                        )
-                    }
-                    
-                    // Overall progress
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("Overall Shot Mastery")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text("67%")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.purple)
-                        }
-                        
-                        ProgressView(value: 0.67)
-                            .progressViewStyle(LinearProgressViewStyle(tint: .purple))
-                            .scaleEffect(x: 1, y: 2, anchor: .center)
-                    }
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.tertiarySystemBackground))
-                    )
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
-    }
-    
-    // MARK: - Bio Section
-    
-    private var bioSection: some View {
+    private var achievementsContent: some View {
         VStack(spacing: 12) {
-            if let user = appState.currentUser {
-                if !user.bio.isEmpty || !user.playStyle.isEmpty || !user.favoriteShot.isEmpty {
-                    HStack {
-                        Text("About")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                        Spacer()
+            // Achievement Progress Overview
+            let stats = appState.achievementTracker?.getStatistics() ?? (unlocked: 0, total: 0, percentage: 0.0)
+            
+            HStack(spacing: 20) {
+                VStack(spacing: 4) {
+                    Text("\(stats.unlocked)")
+                        .font(DS.Font.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.orange)
+                    Text("Unlocked")
+                        .font(DS.Font.caption2)
+                        .foregroundColor(DS.Color.secondary)
+                }
+                
+                VStack(spacing: 4) {
+                    Text("\(stats.total)")
+                        .font(DS.Font.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                    Text("Total")
+                        .font(DS.Font.caption2)
+                        .foregroundColor(DS.Color.secondary)
+                }
+                
+                VStack(spacing: 4) {
+                    Text("\(Int(stats.percentage * 100))%")
+                        .font(DS.Font.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.green)
+                    Text("Complete")
+                        .font(DS.Font.caption2)
+                        .foregroundColor(DS.Color.secondary)
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.orange.opacity(0.1),
+                        Color.blue.opacity(0.1)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+            
+            // Achievement Categories
+            VStack(spacing: 12) {
+                ForEach(AchievementCategory.allCases, id: \.self) { category in
+                    if let tracker = appState.achievementTracker {
+                        AdvancedAchievementCategoryRow(
+                            category: category,
+                            tracker: tracker
+                        )
                     }
-                    
-                    VStack(spacing: 12) {
-                        if !user.bio.isEmpty {
-                            Text(user.bio)
-                                .font(.body)
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        
-                        if !user.playStyle.isEmpty || !user.favoriteShot.isEmpty {
-                            LazyVGrid(columns: [
-                                GridItem(.flexible()),
-                                GridItem(.flexible())
-                            ], spacing: 12) {
-                                if !user.playStyle.isEmpty {
-                                    InfoChip(
-                                        title: "Play Style",
-                                        value: user.playStyle,
-                                        icon: "figure.table.tennis",
-                                        color: .purple
-                                    )
-                                }
-                                
-                                if !user.favoriteShot.isEmpty {
-                                    InfoChip(
-                                        title: "Favorite Shot",
-                                        value: user.favoriteShot,
-                                        icon: "hand.raised.fill",
-                                        color: .green
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.secondarySystemBackground))
-                    )
                 }
             }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
-    }
-    
-    // MARK: - Achievements & Badges Section
-    
-    private var achievementsBadgesSection: some View {
-        VStack(spacing: 16) {
-            if let user = appState.currentUser {
-                HStack {
-                    Text("Achievements")
-                        .font(.headline)
-                        .fontWeight(.bold)
+            
+            // Recent Achievements
+            let recentAchievements = appState.achievementTracker?.achievements
+                .filter { $0.isUnlocked }
+                .sorted { ($0.unlockedAt ?? Date.distantPast) > ($1.unlockedAt ?? Date.distantPast) }
+                .prefix(6) ?? []
+            
+            if !recentAchievements.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Recently Unlocked")
+                        .font(DS.Font.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(DS.Color.secondary)
                     
-                    Spacer()
-                    
-                    Button("View All") {
-                        showingAllAchievements = true
-                    }
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                }
-                
-                // Achievement Progress
-                HStack(spacing: 20) {
-                    VStack(spacing: 4) {
-                        Text("\(user.achievements.count)")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.orange)
-                        Text("Earned")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    VStack(spacing: 4) {
-                        Text("\(AchievementManager.getAllPossibleAchievements().count)")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.blue)
-                        Text("Total")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    VStack(spacing: 4) {
-                        let percentage = Int(Double(user.achievements.count) / Double(AchievementManager.getAllPossibleAchievements().count) * 100)
-                        Text("\(percentage)%")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.green)
-                        Text("Complete")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.secondarySystemBackground))
-                )
-                
-                // Recent Achievements
-                if !user.achievements.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(Array(user.achievements.prefix(6))) { achievement in
-                                AchievementBadge(achievement: achievement)
+                            ForEach(Array(recentAchievements), id: \.id) { achievement in
+                                CompactAchievementBadge(achievement: achievement)
                             }
                         }
                         .padding(.horizontal, 4)
                     }
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "trophy.fill")
-                            .font(.system(size: 40))
-                            .foregroundColor(.orange.opacity(0.6))
-                        
-                        Text("No achievements yet")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        Text("Start playing to unlock your first badge!")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
                 }
+            } else {
+                DSEmptyStateView(
+                    icon: "trophy.fill",
+                    title: "No achievements yet",
+                    message: "Start playing to unlock your first achievement!"
+                )
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
     }
     
-    // MARK: - Recent Activity Section
+    // MARK: - Recent Activity Content
     
-    private var recentActivitySection: some View {
-        VStack(spacing: 16) {
+    private var recentActivityContent: some View {
+        VStack(spacing: 8) {
             if let user = appState.currentUser {
-                    HStack {
-                    Text("Recent Activity")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    
-                        Spacer()
-                    
-                    if !userMatches.isEmpty {
-                        Button("View All") {
-                            showingMatchHistory = true
-                        }
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                    }
-                }
-                
                 if !userMatches.isEmpty {
                     VStack(spacing: 8) {
                         ForEach(Array(userMatches.prefix(3))) { match in
@@ -795,111 +561,109 @@ struct ProfileView: View {
                         }
                     }
                 } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "gamecontroller")
-                            .font(.system(size: 40))
-                            .foregroundColor(.blue.opacity(0.6))
-                        
-                        Text("No matches yet")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        Text("Your recent matches will appear here")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.secondarySystemBackground))
+                    DSEmptyStateView(
+                        icon: "gamecontroller",
+                        title: "No matches yet",
+                        message: "Your recent matches will appear here"
                     )
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
     }
     
-    // MARK: - Detailed Stats Section
+    // MARK: - Detailed Stats Content
     
-    private var detailedStatsSection: some View {
-        VStack(spacing: 16) {
+    private var detailedStatsContent: some View {
+        VStack(spacing: 12) {
             if let user = appState.currentUser {
-                HStack {
-                    Text("Detailed Statistics")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    Spacer()
+                // Performance Chart
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Performance Trends")
+                        .font(DS.Font.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    PerformanceChartView(data: generatePerformanceData(for: user))
+                        .frame(height: 200)
+                }
+                .padding()
+                .background(DS.Color.surfaceAlt)
+                .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+            
+                // Monthly performance chart
+                if !user.monthlyStats.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Monthly Performance")
+                            .font(DS.Font.subheadline)
+                            .fontWeight(.semibold)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(getMonthlyPerformanceData(), id: \.month) { data in
+                                    MonthlyPerformanceCard(data: data)
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                        }
+                    }
+                    .padding()
+                    .background(DS.Color.surfaceAlt)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
                 }
                 
-                VStack(spacing: 12) {
-                    // Monthly performance chart
-                    if !user.monthlyStats.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Monthly Performance")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(getMonthlyPerformanceData(), id: \.month) { data in
-                                        MonthlyPerformanceCard(data: data)
-                                    }
-                                }
-                                .padding(.horizontal, 4)
-                            }
-                        }
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(.secondarySystemBackground))
-                        )
-                    }
+                // Detailed metrics grid
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 12) {
+                    DetailedStatCard(
+                        title: "Avg Points/Match",
+                        value: String(format: "%.1f", user.averagePointsPerMatch),
+                        icon: "target",
+                        color: .purple
+                    )
                     
-                    // Detailed metrics grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 12) {
-                        DetailedStatCard(
-                            title: "Avg Points/Match",
-                            value: String(format: "%.1f", user.averagePointsPerMatch),
-                            icon: "target",
-                            color: .purple
-                        )
-                        
-                        DetailedStatCard(
-                            title: "Total Points",
-                            value: "\(user.totalPointsScored)",
-                            icon: "plus.circle.fill",
-                            color: .green
-                        )
-                        
-                        DetailedStatCard(
-                            title: "Points Conceded",
-                            value: "\(user.totalPointsConceded)",
-                            icon: "minus.circle.fill",
-                            color: .red
-                        )
-                        
-                        DetailedStatCard(
-                            title: "Member Since",
-                            value: formatJoinDate(user.joinDate),
-                            icon: "calendar.badge.clock",
-                            color: .orange
-                        )
-                    }
+                    DetailedStatCard(
+                        title: "Total Points",
+                        value: "\(user.totalPointsScored)",
+                        icon: "plus.circle.fill",
+                        color: .green
+                    )
+                    
+                    DetailedStatCard(
+                        title: "Points Conceded",
+                        value: "\(user.totalPointsConceded)",
+                        icon: "minus.circle.fill",
+                        color: .red
+                    )
+                    
+                    DetailedStatCard(
+                        title: "Member Since",
+                        value: formatJoinDate(user.joinDate),
+                        icon: "calendar.badge.clock",
+                        color: .orange
+                    )
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 20)
     }
     
     // MARK: - Helper Functions
     
-    private func calculateXPForLevel(_ level: Int) -> Int {
-        return level * level * 100
+    private func refreshUserData() async {
+        guard let userId = appState.currentUser?.id.uuidString else { return }
+        
+        isRefreshing = true
+        defer { isRefreshing = false }
+        
+        do {
+            let refreshedUser = try await FirebaseService.shared.getUser(id: userId)
+            await MainActor.run {
+                appState.updateUser(refreshedUser)
+            }
+            LoggingService.shared.log("Profile data refreshed successfully")
+        } catch {
+            LoggingService.shared.logError(error, context: "Failed to refresh profile data")
+        }
     }
     
     private func skillLevelColor(_ skillLevel: String) -> Color {
@@ -960,6 +724,79 @@ struct ProfileView: View {
         formatter.dateFormat = "MMM yyyy"
         return formatter.string(from: date)
     }
+
+    private func shareProfile() {
+        guard let user = appState.currentUser else { return }
+        
+        // Create a formatted profile summary string
+        let profileSummary = """
+        🎮 DinkDropZone Player Profile 🎮
+        
+        🏅 \(user.displayName)
+        Level: \(XPManager.calculateLevel(from: user.xp))
+        ELO Rating: \(user.elo)
+        
+        🏆 Stats:
+        • Matches: \(user.totalMatches)
+        • Win Rate: \(user.formattedWinRate)
+        • Win Streak: \(user.winStreak)
+        • Best Streak: \(user.longestWinStreak)
+        
+        🔥 Join me on DinkDropZone for pickleball matchmaking!
+        """
+        
+        // Items to share
+        let activityItems: [Any] = [profileSummary]
+        
+        // Get the top view controller to present from
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            
+            // Create activity view controller
+            let activityViewController = UIActivityViewController(
+                activityItems: activityItems,
+                applicationActivities: nil
+            )
+            
+            // Present the view controller
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                // For iPad, present as popover
+                activityViewController.popoverPresentationController?.sourceView = UIView()
+                rootViewController.present(activityViewController, animated: true)
+            } else {
+                // For iPhone
+                rootViewController.present(activityViewController, animated: true)
+            }
+            
+            LoggingService.shared.log("User \(user.displayName) shared their profile")
+        }
+    }
+    
+    private func generatePerformanceData(for user: User) -> [(date: Date, elo: Int, winRate: Double)] {
+        // For demo/alpha, generate some sample data based on matches and time
+        // In a real app, this would come from actual historical data
+        var result: [(date: Date, elo: Int, winRate: Double)] = []
+        
+        // Start with 5 data points over the last month
+        let calendar = Calendar.current
+        let today = Date()
+        let startElo = max(1000, user.elo - 200)
+        let eloRange = user.elo - startElo
+        let startWinRate = max(0.4, user.winRate - 0.2)
+        let winRateRange = user.winRate - startWinRate
+        
+        for i in (0..<5).reversed() {
+            let daysAgo = i * 7
+            let date = calendar.date(byAdding: .day, value: -daysAgo, to: today)!
+            let progressRatio = Double(5-i) / 5.0
+            let elo = startElo + Int(Double(eloRange) * progressRatio)
+            let winRate = startWinRate + (winRateRange * progressRatio)
+            
+            result.append((date: date, elo: elo, winRate: winRate))
+        }
+        
+        return result
+    }
 }
 
 // MARK: - Supporting Views
@@ -996,502 +833,71 @@ struct QuickStatBadge: View {
             }
             
             Text(value)
-                .font(.subheadline)
+                .font(DS.Font.subheadline)
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
             
             Text(title)
-                .font(.caption2)
+                .font(DS.Font.caption2)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
-        )
+        .background(DS.Color.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
     }
 }
 
-struct InfoChip: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-    
-    var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundColor(color)
-                Text(title)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(color.opacity(0.1))
-        )
-    }
-}
-
-struct AchievementBadge: View {
-    let achievement: Achievement
-    
-    var body: some View {
-        VStack(spacing: 4) {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(colors: [.yellow, .orange]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 40, height: 40)
-                .shadow(color: .yellow.opacity(0.3), radius: 4, x: 0, y: 2)
-                .overlay(
-                    Image(systemName: achievement.icon)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                )
-            
-            Text(achievement.title)
-                .font(.caption2)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-        }
-        .frame(width: 60)
-    }
-}
-
-struct ProfileRecentMatchCard: View {
-    let match: Match
-    let currentUser: User
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Result indicator
-            Circle()
-                .fill(match.result(for: currentUser) == "Win" ? Color.green : Color.red)
-                .frame(width: 12, height: 12)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(match.opponent(for: currentUser))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                Text(match.date, style: .date)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(match.score)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                Text(match.eloChange)
-                    .font(.caption2)
-                    .foregroundColor(match.eloChange.hasPrefix("+") ? .green : .red)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(.tertiarySystemBackground))
-        )
-    }
-}
-
-struct MonthlyPerformanceCard: View {
-    let data: MonthlyPerformanceData
-    
-    var body: some View {
-        VStack(spacing: 6) {
-            Text(data.month)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-            
-            Text("\(data.matches)")
-                .font(.title3)
-                .fontWeight(.bold)
-            
-            Text("matches")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            
-            Divider()
-                .padding(.vertical, 2)
-            
-            Text(String(format: "%.0f%%", data.winRate * 100))
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(data.winRate > 0.5 ? .green : .red)
-            
-            Text("\(data.eloChange > 0 ? "+" : "")\(data.eloChange) ELO")
-                .font(.caption2)
-                .foregroundColor(data.eloChange > 0 ? .green : .red)
-        }
-        .padding(8)
-        .frame(width: 80)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(.tertiarySystemBackground))
-        )
-    }
-}
-
-struct DetailedStatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
+struct AchievementCategoryRow: View {
+    let category: Achievement.AchievementType
+    let achievements: [Achievement]
+    let totalPossible: Int
     
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color)
+            HStack {
+                Circle()
+                    .fill(category.color)
+                    .frame(width: 10, height: 10)
+                
+                Text(category.rawValue)
+                    .font(DS.Font.subheadline)
+                    .fontWeight(.medium)
+                
+                Spacer()
+                
+                Text("\(achievements.count)/\(totalPossible)")
+                    .font(DS.Font.caption)
+                    .foregroundColor(DS.Color.secondary)
+            }
             
-            Text(value)
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            // Progress bar
+            DSProgressBar(value: Double(achievements.count), total: Double(totalPossible), color: category.color)
         }
-        .padding()
+        .padding(.horizontal, 4)
+    }
+}
+
+struct RefreshableScrollContent: View {
+    @Binding var isRefreshing: Bool
+    let action: () async -> Void
+    
+    var body: some View {
+        VStack {
+            if isRefreshing {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(1.2)
+                    .padding(.top, 20)
+            }
+        }
         .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(color.opacity(0.1))
-        )
-    }
-}
-
-struct ProfileDailyChallengeCard: View {
-    let title: String
-    let description: String
-    let progress: Double
-    let reward: String
-    let isCompleted: Bool
-    let icon: String
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(isCompleted ? Color.green : Color.orange.opacity(0.2))
-                    .frame(width: 40, height: 40)
-                
-                if isCompleted {
-                    Image(systemName: "checkmark")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                } else {
-                    Image(systemName: icon)
-                        .font(.title3)
-                        .foregroundColor(.orange)
-                }
-            }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Text(reward)
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.orange.opacity(0.2)))
-                }
-                
-                Text(description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                if !isCompleted {
-                    ProgressView(value: progress)
-                        .progressViewStyle(LinearProgressViewStyle(tint: .orange))
-                        .scaleEffect(x: 1, y: 0.8, anchor: .center)
-                }
-            }
+        .refreshable {
+            await action()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isCompleted ? Color.green.opacity(0.1) : Color(.tertiarySystemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isCompleted ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
-        )
     }
 }
-
-struct TrainingPartnerCard: View {
-    let name: String
-    let skillLevel: String
-    let matchesPlayed: Int
-    let winRate: Double
-    let lastPlayed: String
-    let partnershipDays: Int
-    let profileImage: String?
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Partner avatar with heart indicator
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(
-                        gradient: Gradient(colors: [Color.pink, Color.purple]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .frame(width: 60, height: 60)
-                
-                if let profileImage = profileImage {
-                    AsyncImage(url: URL(string: profileImage)) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.white)
-                            .font(.title2)
-                    }
-                    .frame(width: 56, height: 56)
-                    .clipShape(Circle())
-                } else {
-                    Image(systemName: "person.fill")
-                        .foregroundColor(.white)
-                        .font(.title2)
-                }
-                
-                // Heart indicator
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 20, height: 20)
-                    .overlay(
-                        Image(systemName: "heart.fill")
-                            .font(.caption2)
-                            .foregroundColor(.white)
-                    )
-                    .offset(x: 18, y: -18)
-            }
-            
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(name)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Text("\(partnershipDays) days")
-                        .font(.caption2)
-                        .foregroundColor(.pink)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.pink.opacity(0.2)))
-                }
-                
-                Text(skillLevel)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(matchesPlayed)")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("matches")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(String(format: "%.0f%%", winRate * 100))
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(winRate > 0.5 ? .green : .orange)
-                        Text("win rate")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Text("Last: \(lastPlayed)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.pink.opacity(0.3), lineWidth: 1)
-                )
-        )
-    }
-}
-
-struct StreakCard: View {
-    let title: String
-    let value: String
-    let subtitle: String
-    let icon: String
-    let color: Color
-    let isActive: Bool
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: isActive ? [color, color.opacity(0.6)] : [Color.gray.opacity(0.3), Color.gray.opacity(0.1)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 50, height: 50)
-                    .overlay(
-                        Circle()
-                            .stroke(isActive ? color.opacity(0.5) : Color.clear, lineWidth: 2)
-                            .scaleEffect(1.2)
-                    )
-                
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(isActive ? .white : .gray)
-            }
-            
-            Text(value)
-                .font(.title3)
-                .fontWeight(.bold)
-                .foregroundColor(isActive ? color : .gray)
-            
-            Text(title)
-                .font(.caption2)
-                .fontWeight(.medium)
-                .multilineTextAlignment(.center)
-            
-            Text(subtitle)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isActive ? color.opacity(0.1) : Color(.tertiarySystemBackground))
-        )
-    }
-}
-
-struct ShotMasteryBadge: View {
-    let name: String
-    let icon: String
-    let mastery: Double
-    let isUnlocked: Bool
-    let color: Color
-    
-    var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                Circle()
-                    .fill(isUnlocked ? 
-                        LinearGradient(
-                            gradient: Gradient(colors: [color, color.opacity(0.6)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ) :
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.1)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 50, height: 50)
-                    .overlay(
-                        Circle()
-                            .stroke(isUnlocked ? color.opacity(0.4) : Color.clear, lineWidth: 2)
-                            .scaleEffect(1.1)
-                    )
-                
-                if isUnlocked {
-                    Image(systemName: icon)
-                        .font(.title3)
-                        .foregroundColor(.white)
-                } else {
-                    Image(systemName: "lock.fill")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                
-                // Mastery indicator
-                if isUnlocked && mastery == 1.0 {
-                    Circle()
-                        .fill(Color.yellow)
-                        .frame(width: 16, height: 16)
-                        .overlay(
-                            Image(systemName: "star.fill")
-                                .font(.caption2)
-                                .foregroundColor(.white)
-                        )
-                        .offset(x: 15, y: -15)
-                }
-            }
-            
-            Text(name)
-                .font(.caption2)
-                .fontWeight(.medium)
-                .multilineTextAlignment(.center)
-                .foregroundColor(isUnlocked ? .primary : .gray)
-            
-            if isUnlocked && mastery < 1.0 {
-                ProgressView(value: mastery)
-                    .progressViewStyle(LinearProgressViewStyle(tint: color))
-                    .scaleEffect(x: 1, y: 0.5, anchor: .center)
-                    .frame(width: 40)
-            }
-        }
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isUnlocked ? color.opacity(0.1) : Color(.systemGray6))
-        )
-    }
-}
-
-// MARK: - Data Models
 
 struct MonthlyPerformanceData {
     let month: String
@@ -1500,51 +906,128 @@ struct MonthlyPerformanceData {
     let eloChange: Int
 }
 
+// MARK: - Advanced Achievement Components
+
+struct AdvancedAchievementCategoryRow: View {
+    let category: AchievementCategory
+    let tracker: AdvancedAchievementTracker
+    
+    var body: some View {
+        let achievements = tracker.getAchievements(for: category)
+        let unlocked = achievements.filter { $0.isUnlocked }.count
+        let total = achievements.count
+        
+        HStack(spacing: 12) {
+            // Category icon
+            ZStack {
+                Circle()
+                    .fill(category.color.opacity(0.2))
+                    .frame(width: 40, height: 40)
+                
+                Image(systemName: category.icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(category.color)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.rawValue)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                HStack(spacing: 8) {
+                    Text("\(unlocked)/\(total)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                    
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.primary.opacity(0.1))
+                                .frame(height: 4)
+                            
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(category.color)
+                                .frame(
+                                    width: geometry.size.width * CGFloat(total > 0 ? Double(unlocked) / Double(total) : 0),
+                                    height: 4
+                                )
+                        }
+                    }
+                    .frame(height: 4)
+                }
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.05))
+        )
+    }
+}
+
+struct CompactAchievementBadge: View {
+    let achievement: Trophy
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(achievement.tier.color.opacity(0.2))
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Circle()
+                            .stroke(achievement.tier.color, lineWidth: 2)
+                    )
+                
+                Image(systemName: achievement.icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(achievement.tier.color)
+            }
+            
+            VStack(spacing: 2) {
+                Text(achievement.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                
+                HStack(spacing: 2) {
+                    Image(systemName: achievement.tier.icon)
+                        .font(.system(size: 8))
+                        .foregroundColor(achievement.tier.color)
+                    
+                    Text(achievement.tier.rawValue)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(achievement.tier.color)
+                }
+            }
+        }
+        .frame(width: 70)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(achievement.tier.color.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+}
+
 // MARK: - Preview
 
 #Preview {
-    @MainActor
-    struct PreviewHelper {
-        static func createSampleUserWithData() -> User {
-            let user = User(email: "john.doe@example.com", password: "password", elo: 1650, xp: 2400, totalMatches: 32, wins: 21, losses: 11, winStreak: 4)
-            
-            // Fill in profile details
-            user.displayName = "John Doe"
-            user.bio = "Passionate pickleball player who loves strategic gameplay and meeting new opponents! Always looking to improve my game and have fun on the court."
-            user.location = "San Francisco, CA"
-            user.skillLevel = SkillLevel.advanced.rawValue
-            user.playStyle = PlayStyle.balanced.rawValue
-            user.favoriteShot = "Dink Shot"
-            
-            // Set availability
-            user.availability = [
-                "Monday": true,
-                "Tuesday": false,
-                "Wednesday": true,
-                "Thursday": true,
-                "Friday": false,
-                "Saturday": true,
-                "Sunday": true
-            ]
-            
-            // Add comprehensive stats
-            user.totalPointsScored = 387
-            user.totalPointsConceded = 295
-            user.longestWinStreak = 8
-            
-            // Note: achievements is now a computed property that returns empty data
-            // Sample achievements functionality removed for SwiftData compatibility
-            
-            // Note: monthlyStats is now a computed property that returns empty data
-            // Sample monthly stats functionality removed for SwiftData compatibility
-            
-            return user
-        }
-    }
-    
     let sampleAppState = AppState()
-    sampleAppState.currentUser = PreviewHelper.createSampleUserWithData()
+    sampleAppState.currentUser = User.preview
     
     return ProfileView()
-        .environment(sampleAppState)
+        .environmentObject(sampleAppState)
 } 

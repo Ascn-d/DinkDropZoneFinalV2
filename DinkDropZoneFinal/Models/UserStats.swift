@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 // MARK: - Daily Stats
 
@@ -232,66 +233,29 @@ struct AchievementProgress: Codable {
     var missionsCompleted: Int = 0
     var level: Int = 1
     
-    func getProgress(for trophy: TrophyType) -> (current: Int, target: Int, percentage: Double) {
-        let (current, target) = getProgressValues(for: trophy)
+    // Use AchievementCategory from Trophy.swift
+    func getProgress(for category: AchievementCategory) -> (current: Int, target: Int, percentage: Double) {
+        let (current, target) = getProgressValues(for: category)
         let percentage = min(Double(current) / Double(target), 1.0)
         return (current, target, percentage)
     }
     
-    private func getProgressValues(for trophy: TrophyType) -> (current: Int, target: Int) {
-        switch trophy {
-        case .firstWin:
-            return (matchesWon, 1)
-        case .winStreak5:
-            return (longestWinStreak, 5)
-        case .winStreak10:
-            return (longestWinStreak, 10)
-        case .perfectionist:
-            return (perfectGames, 1)
-        case .centurion:
+    private func getProgressValues(for category: AchievementCategory) -> (current: Int, target: Int) {
+        switch category {
+        case .gameplay:
             return (matchesPlayed, 100)
-        case .champion:
-            return (tournamentsWon, 1)
-        case .grandSlam:
-            return (tournamentsWon, 5)
-        case .socialButterfly:
+        case .social:
             return (friendsAdded, 10)
-        case .messenger:
-            return (messagesSent, 100)
-        case .teamPlayer:
-            return (socialMatches, 25)
-        case .rookie:
-            return (level, 5)
-        case .veteran:
-            return (level, 10)
-        case .expert:
+        case .progression:
             return (level, 25)
-        case .master:
-            return (level, 50)
-        case .legend:
-            return (level, 100)
-        case .taskmaster:
-            return (missionsCompleted, 50)
-        case .dedicated:
-            return (consecutiveLogins, 30)
-        case .consistent:
-            return (dailyLogins, 100)
-        case .xpCollector:
-            return (totalXP, 10000)
-        case .explorer:
+        case .competitive:
+            return (tournamentsWon, 5)
+        case .exploration:
             return (courtsVisited, 10)
-        case .earlyBird:
-            return (0, 10) // Needs special tracking
-        case .nightOwl:
-            return (0, 10) // Needs special tracking
-        case .weekendWarrior:
-            return (0, 50) // Needs special tracking
-        case .streakBreaker:
-            return (0, 1) // Needs special tracking
-        case .comeback:
-            return (0, 1) // Needs special tracking
-        case .unstoppable:
-            return (longestWinStreak, 20)
+        case .seasonal:
+            return (consecutiveLogins, 30)
+        case .secret:
+            return (0, 1) // Secret achievements
         }
     }
 }
@@ -321,4 +285,10 @@ struct StatsSummary: Codable {
     
     var accountAge: Int { lifetime.accountAge }
     var loginStreak: Int { lifetime.consecutiveDays }
+}
+
+// MARK: - User Statistics
+
+struct UserStats: Codable {
+    // ... rest of the code ...
 } 

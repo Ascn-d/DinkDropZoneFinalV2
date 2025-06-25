@@ -4,7 +4,7 @@ import FirebaseFirestore
 
 struct SignUpView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
@@ -142,7 +142,7 @@ struct SignUpView: View {
         
         do {
             // Create Firebase Auth user
-            let authResult = try await Auth.auth().createUser(withEmail: email, password: password)
+            _ = try await Auth.auth().createUser(withEmail: email, password: password)
             
             // Create user profile in Firestore
             let user = User(

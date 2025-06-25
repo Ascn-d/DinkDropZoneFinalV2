@@ -3,11 +3,12 @@ import SwiftData
 
 struct LeaderboardView: View {
     @Query(sort: \User.elo, order: .reverse) private var users: [User]
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var selectedCategory: LeaderboardCategory = .global
     @State private var selectedTimeframe: TimeFrame = .season
     @State private var showingLeagueInfo = false
     @State private var selectedLeague: League? = nil
+    @State private var isRefreshing = false
     
     enum LeaderboardCategory: String, CaseIterable {
         case global = "Global"
@@ -37,6 +38,8 @@ struct LeaderboardView: View {
                 
                 // Leaderboard content
                 ScrollView {
+                    RefreshableView(isRefreshing: $isRefreshing, onRefresh: refreshLeaderboardData)
+                    
                     LazyVStack(spacing: 8) {
                         // Top 3 podium
                         if !filteredUsers.isEmpty {
@@ -66,7 +69,7 @@ struct LeaderboardView: View {
                     .padding(.horizontal)
                 }
             }
-            .navigationTitle("Leaderboards")
+            .navigationTitle("Leaderboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -74,7 +77,7 @@ struct LeaderboardView: View {
                         showingLeagueInfo = true
                     } label: {
                         Image(systemName: "info.circle")
-                            .foregroundColor(.blue)
+                            .foregroundColor(DS.Color.accent)
                     }
                 }
             }
@@ -82,6 +85,14 @@ struct LeaderboardView: View {
                 LeagueInfoView()
             }
         }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func refreshLeaderboardData() async {
+        // This would fetch fresh data from the server
+        // For now, we'll just simulate a delay
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
     }
     
     // MARK: - Header
@@ -96,14 +107,14 @@ struct LeaderboardView: View {
                     // Current user info
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Your Rank")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(DS.Font.caption)
+                            .foregroundColor(DS.Color.secondary)
                         
                         HStack(spacing: 8) {
                             Text("#\(userRank)")
-                                .font(.title2)
+                                .font(DS.Font.title2)
                                 .fontWeight(.bold)
-                                .foregroundColor(.primary)
+                                .foregroundColor(DS.Color.primary)
                             
                             LeagueIcon(league: currentLeague, size: 24)
                         }
@@ -114,11 +125,11 @@ struct LeaderboardView: View {
                     // League progression
                     VStack(alignment: .trailing, spacing: 4) {
                         Text(currentLeague.name)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(DS.Font.caption)
+                            .foregroundColor(DS.Color.secondary)
                         
                         Text("\(currentUser.elo) ELO")
-                            .font(.title3)
+                            .font(DS.Font.title3)
                             .fontWeight(.semibold)
                             .foregroundColor(currentLeague.color)
                     }
@@ -131,23 +142,21 @@ struct LeaderboardView: View {
                     VStack(spacing: 8) {
                         HStack {
                             Text("Progress to \(nextLeague.name)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(DS.Font.caption)
+                                .foregroundColor(DS.Color.secondary)
                             Spacer()
                             Text("\(nextLeague.minELO - currentUser.elo) ELO to go")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(DS.Font.caption)
+                                .foregroundColor(DS.Color.secondary)
                         }
                         
-                        ProgressView(value: progress)
-                            .progressViewStyle(LinearProgressViewStyle(tint: nextLeague.color))
-                            .scaleEffect(x: 1, y: 2, anchor: .center)
+                        DSProgressBar(value: progress, color: nextLeague.color)
                     }
                 }
             }
         }
         .padding()
-        .background(Color(.secondarySystemBackground))
+        .background(DS.Color.surface)
     }
     
     // MARK: - League Tier Section
@@ -156,14 +165,14 @@ struct LeaderboardView: View {
         VStack(spacing: 12) {
             HStack {
                 Text("League Tiers")
-                    .font(.headline)
+                    .font(DS.Font.headline)
                     .fontWeight(.bold)
                 Spacer()
                 Button("View All") {
                     showingLeagueInfo = true
                 }
-                .font(.caption)
-                .foregroundColor(.blue)
+                .font(DS.Font.caption)
+                .foregroundColor(DS.Color.accent)
             }
             
             ScrollView(.horizontal, showsIndicators: false) {
@@ -182,7 +191,8 @@ struct LeaderboardView: View {
             }
         }
         .padding(.vertical)
-        .background(Color(.systemBackground))
+        .padding(.horizontal)
+        .background(DS.Color.background)
     }
     
     // MARK: - Filters Section
@@ -199,15 +209,15 @@ struct LeaderboardView: View {
                             }
                         } label: {
                             Text(category.rawValue)
-                                .font(.subheadline)
+                                .font(DS.Font.subheadline)
                                 .fontWeight(.medium)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .background(
                                     Capsule()
-                                        .fill(selectedCategory == category ? Color.blue : Color(.tertiarySystemBackground))
+                                        .fill(selectedCategory == category ? DS.Color.accent : DS.Color.surface)
                                 )
-                                .foregroundColor(selectedCategory == category ? .white : .primary)
+                                .foregroundColor(selectedCategory == category ? .white : DS.Color.primary)
                         }
                     }
                 }
@@ -231,7 +241,7 @@ struct LeaderboardView: View {
     private var topThreePodium: some View {
         VStack(spacing: 16) {
             Text("🏆 Champions")
-                .font(.headline)
+                .font(DS.Font.headline)
                 .fontWeight(.bold)
             
             HStack(alignment: .bottom, spacing: 8) {
@@ -268,7 +278,7 @@ struct LeaderboardView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
                 .fill(LinearGradient(
                     gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.purple.opacity(0.1)]),
                     startPoint: .topLeading,
@@ -276,7 +286,7 @@ struct LeaderboardView: View {
                 ))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
                 .stroke(Color.blue.opacity(0.3), lineWidth: 1)
         )
     }
@@ -289,7 +299,7 @@ struct LeaderboardView: View {
                 Image(systemName: "calendar.badge.clock")
                     .foregroundColor(.orange)
                 Text("Season Ends In")
-                    .font(.headline)
+                    .font(DS.Font.headline)
                     .fontWeight(.bold)
                 Spacer()
             }
@@ -297,48 +307,48 @@ struct LeaderboardView: View {
             HStack(spacing: 20) {
                 VStack(spacing: 4) {
                     Text("12")
-                        .font(.title)
+                        .font(DS.Font.title)
                         .fontWeight(.bold)
                         .foregroundColor(.orange)
                     Text("Days")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(DS.Font.caption)
+                        .foregroundColor(DS.Color.secondary)
                 }
                 
                 VStack(spacing: 4) {
                     Text("8")
-                        .font(.title)
+                        .font(DS.Font.title)
                         .fontWeight(.bold)
                         .foregroundColor(.orange)
                     Text("Hours")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(DS.Font.caption)
+                        .foregroundColor(DS.Color.secondary)
                 }
                 
                 VStack(spacing: 4) {
                     Text("23")
-                        .font(.title)
+                        .font(DS.Font.title)
                         .fontWeight(.bold)
                         .foregroundColor(.orange)
                     Text("Minutes")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(DS.Font.caption)
+                        .foregroundColor(DS.Color.secondary)
                 }
                 
                 Spacer()
             }
             
             Text("Don't forget to claim your season rewards!")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(DS.Font.caption)
+                .foregroundColor(DS.Color.secondary)
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
                 .fill(Color.orange.opacity(0.1))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
                 .stroke(Color.orange.opacity(0.3), lineWidth: 1)
         )
     }
@@ -477,16 +487,16 @@ struct LeagueTierCard: View {
                 }
                 
                 Text(league.name)
-                    .font(.caption)
+                    .font(DS.Font.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .foregroundColor(DS.Color.primary)
                 
                 Text("\(playerCount) players")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(DS.Font.caption2)
+                    .foregroundColor(DS.Color.secondary)
                 
                 Text("\(league.minELO)+ ELO")
-                    .font(.caption2)
+                    .font(DS.Font.caption2)
                     .foregroundColor(league.color)
                     .fontWeight(.medium)
             }
@@ -512,32 +522,32 @@ struct PodiumPosition: View {
                     .frame(width: 40, height: 40)
                 
                 Text("\(rank)")
-                    .font(.headline)
+                    .font(DS.Font.headline)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
             }
             
             // User avatar
             Circle()
-                .fill(Color.blue.opacity(0.2))
+                .fill(DS.Color.accent.opacity(0.2))
                 .frame(width: 50, height: 50)
                 .overlay(
                     Text(String(user.displayName.isEmpty ? user.email.prefix(1) : user.displayName.prefix(1)))
-                        .font(.headline)
+                        .font(DS.Font.headline)
                         .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(DS.Color.accent)
                 )
             
             // User info
             VStack(spacing: 2) {
                 Text(user.displayName.isEmpty ? user.email.components(separatedBy: "@").first ?? "Player" : user.displayName)
-                    .font(.caption)
+                    .font(DS.Font.caption)
                     .fontWeight(.semibold)
                     .lineLimit(1)
                 
                 Text("\(user.elo) ELO")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(DS.Font.caption2)
+                    .foregroundColor(DS.Color.secondary)
             }
             
             // Podium base
@@ -548,7 +558,7 @@ struct PodiumPosition: View {
                     VStack {
                         Spacer()
                         Text("#\(rank)")
-                            .font(.title2)
+                            .font(DS.Font.title2)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .padding(.bottom, 8)
@@ -568,36 +578,36 @@ struct LeaderboardRow: View {
         HStack(spacing: 12) {
             // Rank
             Text("#\(rank)")
-                .font(.headline)
+                .font(DS.Font.headline)
                 .fontWeight(.bold)
-                .foregroundColor(isCurrentUser ? .blue : .secondary)
+                .foregroundColor(isCurrentUser ? DS.Color.accent : DS.Color.secondary)
                 .frame(width: 40, alignment: .leading)
             
             // User avatar
             Circle()
-                .fill(isCurrentUser ? Color.blue.opacity(0.3) : Color.gray.opacity(0.2))
+                .fill(isCurrentUser ? DS.Color.accent.opacity(0.3) : DS.Color.surface)
                 .frame(width: 40, height: 40)
                 .overlay(
                     Text(String(user.displayName.isEmpty ? user.email.prefix(1) : user.displayName.prefix(1)))
-                        .font(.subheadline)
+                        .font(DS.Font.subheadline)
                         .fontWeight(.bold)
-                        .foregroundColor(isCurrentUser ? .blue : .gray)
+                        .foregroundColor(isCurrentUser ? DS.Color.accent : DS.Color.secondary)
                 )
             
             // User info
             VStack(alignment: .leading, spacing: 2) {
                 Text(user.displayName.isEmpty ? user.email.components(separatedBy: "@").first ?? "Player" : user.displayName)
-                    .font(.subheadline)
+                    .font(DS.Font.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(isCurrentUser ? .blue : .primary)
+                    .foregroundColor(isCurrentUser ? DS.Color.accent : DS.Color.primary)
                 
                 if showDivision {
                     let league = getLeagueForELO(user.elo)
                     HStack(spacing: 4) {
                         LeagueIcon(league: league, size: 16)
                         Text(league.name)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .font(DS.Font.caption2)
+                            .foregroundColor(DS.Color.secondary)
                     }
                 }
             }
@@ -607,23 +617,23 @@ struct LeaderboardRow: View {
             // Stats
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(user.elo)")
-                    .font(.headline)
+                    .font(DS.Font.headline)
                     .fontWeight(.bold)
-                    .foregroundColor(isCurrentUser ? .blue : .primary)
+                    .foregroundColor(isCurrentUser ? DS.Color.accent : DS.Color.primary)
                 
                 Text(user.formattedWinRate)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(DS.Font.caption2)
+                    .foregroundColor(DS.Color.secondary)
             }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isCurrentUser ? Color.blue.opacity(0.1) : Color(.systemBackground))
+            RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
+                .fill(isCurrentUser ? DS.Color.accent.opacity(0.1) : DS.Color.surface)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isCurrentUser ? Color.blue.opacity(0.3) : Color.clear, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
+                        .stroke(isCurrentUser ? DS.Color.accent.opacity(0.3) : Color.clear, lineWidth: 1)
                 )
         )
     }
@@ -659,11 +669,69 @@ struct League: Identifiable {
 
 struct LeagueInfoView: View {
     var body: some View {
-        Text("League Information")
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: DS.Layout.sectionSpacing) {
+                    // How Leagues Work
+                    VStack(alignment: .leading, spacing: DS.Layout.itemSpacing) {
+                        Text("How Leagues Work")
+                            .font(DS.Font.title3)
+                            .fontWeight(.bold)
+                        
+                        Text("Leagues are determined by your ELO rating. As you win matches, your ELO increases, allowing you to climb to higher leagues with better rewards.")
+                            .font(DS.Font.body)
+                            .foregroundColor(DS.Color.primary)
+                    }
+                    .padding()
+                    .background(DS.Color.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+                    
+                    // League Tiers
+                    VStack(alignment: .leading, spacing: DS.Layout.itemSpacing) {
+                        Text("League Tiers")
+                            .font(DS.Font.title3)
+                            .fontWeight(.bold)
+                        
+                        VStack(spacing: 12) {
+                            ForEach(League.allLeagues) { league in
+                                HStack(spacing: 16) {
+                                    LeagueIcon(league: league, size: 40)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(league.name)
+                                            .font(DS.Font.headline)
+                                            .fontWeight(.semibold)
+                                        
+                                        Text("\(league.minELO)+ ELO required")
+                                            .font(DS.Font.caption)
+                                            .foregroundColor(DS.Color.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Text("\(Int.random(in: 5...100)) players")
+                                        .font(DS.Font.caption)
+                                        .foregroundColor(DS.Color.secondary)
+                                }
+                                .padding()
+                                .background(DS.Color.surfaceAlt)
+                                .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(DS.Color.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+                }
+                .padding()
+            }
+            .navigationTitle("League Information")
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 
 #Preview {
     LeaderboardView()
-        .environment(AppState())
+        .environmentObject(AppState())
 } 

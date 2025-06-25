@@ -1,47 +1,50 @@
 import SwiftUI
 
-/// Root container -----------------------------------------------------------
+// ─────────────────────────────────────────────────────────────
+// Root container
 struct SidebarHomeView: View {
     @State private var selected: SidebarItem = .dashboard
     @State private var showSidebar = false
     @Environment(\.horizontalSizeClass) private var hSize
     
-    // A single source of truth for sidebar width
-    private var sidebarWidth: CGFloat {
-        hSize == .regular ? 300 : 280
-    }
+    private var sidebarWidth: CGFloat { hSize == .regular ? 300 : 280 }
     
     var body: some View {
         NavigationStack {
-            ZStack {               // Needed only for the dim‑background on phone
-                // —— Main content + (optional) sidebar side‑by‑side ——
+            ZStack {
+                // —— Main content + (optional) sidebar side-by-side ——
                 HStack(spacing: 0) {
                     
                     if hSize == .regular || showSidebar {
                         ModernSidebarView(
                             selectedItem: $selected,
                             showSidebar: $showSidebar,
-                            sidebarWidth: sidebarWidth
+                            sidebarWidth: sidebarWidth,
+                            hSize: hSize            // pass size class
                         )
                         .frame(width: sidebarWidth)
-                        .transition(AnyTransition.move(edge: .leading).combined(with: .opacity))
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                     }
                     
-                    // A divider is nice when the sidebar is permanently shown
                     if hSize == .regular { Divider() }
                     
                     // ---------------- Main pane ----------------
                     SelectedScreen(selected)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .id(selected)                      // ← key fix
+                        .frame(maxWidth: .infinity,
+                               maxHeight: .infinity)
                         .background(DS.Color.background)
-                        .ignoresSafeArea()          // background only
+                        .ignoresSafeArea()                 // background only
                 }
                 .animation(.easeOut(duration: 0.25), value: showSidebar)
+                .animation(.easeInOut(duration: 0.2), value: selected) // polish
                 
-                // Dimmed overlay for tap‑to‑dismiss on compact widths
+                // Dim overlay that covers only the main-content area (not the sidebar) on phones
                 if showSidebar && hSize == .compact {
-                    Color.black.opacity(0.4)
+                    Color.black.opacity(0.25)
                         .ignoresSafeArea()
+                        // Leave the sidebar region untouchable so taps pass through
+                        .padding(.leading, sidebarWidth)
                         .onTapGesture { withAnimation { showSidebar = false } }
                         .transition(.opacity)
                 }
@@ -49,7 +52,6 @@ struct SidebarHomeView: View {
             .navigationTitle(selected.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Hamburger visible only when sidebar is hidden in compact size
                 if hSize == .compact {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button {
@@ -69,7 +71,8 @@ struct SidebarHomeView: View {
     }
 }
 
-/// Simple type‑erased router (keeps your original switch‑on‑enum logic)
+// ─────────────────────────────────────────────────────────────
+// Simple router
 @ViewBuilder
 private func SelectedScreen(_ item: SidebarItem) -> some View {
     switch item {
@@ -87,7 +90,110 @@ private func SelectedScreen(_ item: SidebarItem) -> some View {
     }
 }
 
-// MARK: - Supporting types
+// ─────────────────────────────────────────────────────────────
+// Sidebar + items (unchanged except for compact-only close)
+
+struct ModernSidebarView: View {
+    @Binding var selectedItem: SidebarItem
+    @Binding var showSidebar: Bool
+    let sidebarWidth: CGFloat
+    let hSize: UserInterfaceSizeClass?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Image(systemName: "sportscourt.fill")
+                    .font(.title2)
+                    .foregroundColor(DS.Color.accent)
+                Text("DinkDropZone")
+                    .font(DS.Font.title2).bold()
+            }
+            .padding(.top, 60)
+            .padding(.horizontal, 20)
+            
+            // Menu list
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 6) {
+                    ForEach(SidebarItem.allCases) { item in
+                        ModernSidebarItemView(
+                            item: item,
+                            isSelected: item == selectedItem
+                        ) {
+                            selectedItem = item
+                            // Close only on phones
+                            if hSize == .compact {
+                                withAnimation { showSidebar = false }
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 20)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(alignment: .center) {
+            if hSize == .compact {
+                Rectangle().fill(.ultraThinMaterial)
+            } else {
+                DS.Color.surface
+            }
+        }
+    }
+}
+
+struct ModernSidebarItemView: View {
+    let item: SidebarItem
+    let isSelected: Bool
+    let action: () -> Void
+
+    @EnvironmentObject private var appState: AppState
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: item.icon)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isSelected ? item.color : DS.Color.secondary)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(isSelected ? item.color.opacity(0.15) : Color.clear)
+                        )
+
+                    // Unread badge for Social item
+                    if item == .social && appState.unreadNotifications.count > 0 {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 4, y: -4)
+                            .transition(.scale)
+                    }
+                }
+                
+                Text(item.title)
+                    .font(DS.Font.body)
+                    .foregroundColor(isSelected ? DS.Color.primary : DS.Color.secondary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? item.color.opacity(0.08) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enum + preview remain as before
+
+// MARK: - Sidebar metadata
 
 enum SidebarItem: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
@@ -139,73 +245,9 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 }
 
-struct ModernSidebarView: View {
-    @Binding var selectedItem: SidebarItem
-    @Binding var showSidebar: Bool
-    let sidebarWidth: CGFloat
+// MARK: - Preview
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // App title / header
-            HStack {
-                Image(systemName: "sportscourt.fill")
-                    .font(.title2)
-                    .foregroundColor(DS.Color.accent)
-                Text("DinkDropZone")
-                    .font(DS.Font.title2).bold()
-            }
-            .padding(.top, 60)
-            .padding(.horizontal, 20)
-
-            // Menu list
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 6) {
-                    ForEach(SidebarItem.allCases) { item in
-                        ModernSidebarItemView(item: item, isSelected: item == selectedItem) {
-                            selectedItem = item
-                            withAnimation { showSidebar = false }
-                        }
-                    }
-                }
-                .padding(.vertical, 20)
-            }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DS.Color.surface)
-    }
-}
-
-struct ModernSidebarItemView: View {
-    let item: SidebarItem
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(isSelected ? item.color : DS.Color.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(isSelected ? item.color.opacity(0.15) : Color.clear)
-                    )
-
-                Text(item.title)
-                    .font(DS.Font.body)
-                    .foregroundColor(isSelected ? DS.Color.primary : DS.Color.secondary)
-
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? item.color.opacity(0.08) : Color.clear)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
+#Preview {
+    SidebarHomeView()
+        .environmentObject(AppState())
 }

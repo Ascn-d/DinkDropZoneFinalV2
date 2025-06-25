@@ -5,7 +5,7 @@ import SwiftData
 final class LeagueMatch {
     var id: String
     var league: PickleLeague
-    var match: Match
+    var match: DinkDropZoneFinal.Match
     var round: Int
     var matchNumber: Int
     var status: MatchStatus
@@ -24,7 +24,7 @@ final class LeagueMatch {
     init(
         id: String = UUID().uuidString,
         league: PickleLeague,
-        match: Match,
+        match: DinkDropZoneFinal.Match,
         round: Int,
         matchNumber: Int,
         status: MatchStatus = .scheduled,

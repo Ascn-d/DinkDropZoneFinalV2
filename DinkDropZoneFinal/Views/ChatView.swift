@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ChatView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var selectedTab: ChatTab = .messages
     @State private var searchText = ""
     @State private var showingNewChat = false
@@ -811,5 +811,5 @@ struct MatchPlanningChatView: View {
 
 #Preview {
     ChatView()
-        .environment(AppState())
+        .environmentObject(AppState())
 } 

@@ -16,8 +16,7 @@ struct StatsCard: View {
         }
         .frame(maxWidth: .infinity,minHeight: 70)
         .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .dsCard()
     }
 }
 

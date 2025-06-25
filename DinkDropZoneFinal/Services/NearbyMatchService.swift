@@ -1,6 +1,5 @@
 import Foundation
 import MultipeerConnectivity
-import Observation
 import SwiftUI
 
 @MainActor

@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct NotificationBanner: View {
     let notification: AppNotification
@@ -154,7 +155,7 @@ struct ToastNotification: View {
 }
 
 struct MatchFoundBanner: View {
-    let match: MatchProposal
+    let match: DinkDropZoneFinal.MMMatchProposal
     let onAccept: () -> Void
     let onDecline: () -> Void
     
@@ -162,7 +163,7 @@ struct MatchFoundBanner: View {
     @State private var timer: Timer?
     @State private var isVisible = false
     
-    init(match: MatchProposal, onAccept: @escaping () -> Void, onDecline: @escaping () -> Void) {
+    init(match: DinkDropZoneFinal.MMMatchProposal, onAccept: @escaping () -> Void, onDecline: @escaping () -> Void) {
         self.match = match
         self.onAccept = onAccept
         self.onDecline = onDecline
@@ -205,7 +206,7 @@ struct MatchFoundBanner: View {
                     .foregroundColor(match.potentialMatch.matchType.color)
                 
                 HStack {
-                    ForEach(match.potentialMatch.players, id: \.user.id) { player in
+                    ForEach(match.potentialMatch.players, id: \.user.id) { (player: DinkDropZoneFinal.MMQueueEntry) in
                         VStack(spacing: 4) {
                             Circle()
                                 .fill(Color.blue.opacity(0.2))
@@ -418,9 +419,10 @@ struct AchievementBanner: View {
     VStack(spacing: 20) {
         NotificationBanner(
             notification: AppNotification(
-                type: .matchComplete,
+                type: .match,
                 title: "Match Found!",
-                message: "You've been matched with Sarah Chen"
+                message: "You've been matched with Sarah Chen",
+                data: [:]
             ),
             onDismiss: {},
             onTap: nil as (() -> Void)?

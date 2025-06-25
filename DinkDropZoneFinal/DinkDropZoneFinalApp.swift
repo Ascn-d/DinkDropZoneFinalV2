@@ -8,11 +8,17 @@
 import SwiftUI
 import SwiftData
 import FirebaseCore
+// Nearby player service
+import CoreLocation
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         FirebaseApp.configure()
+#if DEBUG
+        // Log unsatisfiable Auto-Layout constraints directly in the console for faster debugging
+        UserDefaults.standard.set(true, forKey: "_UIConstraintBasedLayoutLogUnsatisfiable")
+#endif
         return true
     }
 }
@@ -93,26 +99,33 @@ struct DinkDropZoneFinalApp: App {
     @State private var xpNotificationManager = XPNotificationManager()
     @State private var nearbyService = NearbyMatchService()
     @State private var locationService = UserLocationService()
+    @State private var nearbyPlayersService: NearbyPlayersService?
     
     var body: some Scene {
         WindowGroup {
             ZStack {
                 ContentView()
                     .modelContainer(container)
-                    .environment(appState)
+                    .environmentObject(appState)
                     .environment(xpManager ?? XPManager(modelContext: container.mainContext))
                     .environment(xpNotificationManager)
                     .environment(nearbyService)
                     .environment(locationService)
+                    .environment(nearbyPlayersService ?? NearbyPlayersService(locationService: locationService))
                 
                 // XP Notification overlay
                 XPNotificationContainer()
                     .environment(xpNotificationManager)
+
+                // General app notifications (errors, etc.)
+                NotificationBannerContainer()
+                    .environmentObject(appState)
             }
                 .onAppear {
                     LoggingService.shared.log("App launched", level: .info)
                     appState.initialize(with: container.mainContext)
                     setupXPManager()
+                    nearbyPlayersService = NearbyPlayersService(locationService: locationService)
                     SeedDataService.seedIfNeeded(modelContext: container.mainContext)
                     CourtDataSeeder.seedIfNeeded(modelContext: container.mainContext)
                 }

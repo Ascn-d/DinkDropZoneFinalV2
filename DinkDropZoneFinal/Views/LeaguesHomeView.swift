@@ -4,7 +4,7 @@ import SwiftData
 struct LeaguesHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var leagues: [PickleLeague]
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var searchText = ""
     @State private var selectedSkillLevel: String? = nil
     @State private var selectedDistance: String? = nil

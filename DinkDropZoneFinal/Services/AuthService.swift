@@ -1,6 +1,5 @@
 import Foundation
 import AuthenticationServices
-import Observation
 import SwiftData
 
 // Simple Keychain helper

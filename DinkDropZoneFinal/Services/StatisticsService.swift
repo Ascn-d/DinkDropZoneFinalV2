@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 actor StatisticsService {
     private let modelContext: ModelContext
@@ -11,29 +12,20 @@ actor StatisticsService {
     // MARK: - Public API
     
     func getDetailedStats(for user: User) async -> DetailedUserStats {
-        // TODO: Implement real statistics calculation
-        let overview = OverviewStats(
+        // In a real app, we'd fetch this from a service
+        // For now, just use the user's current stats
+        return DetailedUserStats(
             totalMatches: user.totalMatches,
             wins: user.wins,
             losses: user.losses,
-            winRate: user.totalMatches > 0 ? Double(user.wins) / Double(user.totalMatches) : 0,
-            currentElo: user.elo,
-            eloChange: 0,
-            averagePointsPerMatch: user.totalMatches > 0 ? Double(user.totalPointsScored) / Double(user.totalMatches) : 0
+            winRate: user.winRate,
+            elo: user.elo,
+            winStreak: user.winStreak,
+            longestWinStreak: user.longestWinStreak,
+            averagePointsScored: Double(user.totalPointsScored) / max(1, Double(user.totalMatches)),
+            averagePointsConceded: Double(user.totalPointsConceded) / max(1, Double(user.totalMatches)),
+            pointsDifferential: user.pointsDifferential
         )
-        let performance = PerformanceStats(
-            recentWinRate: overview.winRate,
-            averagePointsPerMatch: overview.averagePointsPerMatch,
-            averagePointsConceded: user.totalMatches > 0 ? Double(user.totalPointsConceded) / Double(user.totalMatches) : 0,
-            bestPerformance: 0,
-            worstPerformance: 0
-        )
-        let trends = TrendStats(recentWinRate: overview.winRate, eloTrend: 0, performanceTrend: 0)
-        let opponents = OpponentStats(toughestOpponent: "", easiestOpponent: "", mostPlayedOpponent: "")
-        let shots = ShotStats(favoriteShot: user.favoriteShot, shotAccuracy: 0, shotDistribution: [:])
-        let streakType: StreakType = user.winStreak >= 0 ? .win : .loss
-        let streaks = StreakStats(currentStreak: user.winStreak, longestStreak: user.longestWinStreak, streakType: streakType)
-        return DetailedUserStats(overview: overview, performance: performance, trends: trends, opponents: opponents, shots: shots, streaks: streaks)
     }
     
     func getRecentPerformanceInsights(for user: User) async -> [PerformanceInsightModel] {
@@ -48,27 +40,17 @@ actor StatisticsService {
 
     // Legacy method names for compatibility with AppState
     func calculateDetailedStats(for user: User) async -> DetailedUserStats {
-        DetailedUserStats(
-            overview: OverviewStats(
-                totalMatches: user.totalMatches,
-                wins: user.wins,
-                losses: user.losses,
-                winRate: user.totalMatches > 0 ? Double(user.wins) / Double(user.totalMatches) : 0,
-                currentElo: user.elo,
-                eloChange: 0,
-                averagePointsPerMatch: user.totalMatches > 0 ? Double(user.totalPointsScored) / Double(user.totalMatches) : 0
-            ),
-            performance: PerformanceStats(
-                recentWinRate: user.totalMatches > 0 ? Double(user.wins) / Double(user.totalMatches) : 0,
-                averagePointsPerMatch: user.totalMatches > 0 ? Double(user.totalPointsScored) / Double(user.totalMatches) : 0,
-                averagePointsConceded: user.totalMatches > 0 ? Double(user.totalPointsConceded) / Double(user.totalMatches) : 0,
-                bestPerformance: 0,
-                worstPerformance: 0
-            ),
-            trends: TrendStats(recentWinRate: 0, eloTrend: 0, performanceTrend: 0),
-            opponents: OpponentStats(toughestOpponent: "", easiestOpponent: "", mostPlayedOpponent: ""),
-            shots: ShotStats(favoriteShot: user.favoriteShot, shotAccuracy: 0, shotDistribution: [:]),
-            streaks: StreakStats(currentStreak: user.winStreak, longestStreak: user.longestWinStreak, streakType: user.winStreak >= 0 ? .win : .loss)
+        return DetailedUserStats(
+            totalMatches: user.totalMatches,
+            wins: user.wins,
+            losses: user.losses,
+            winRate: user.winRate,
+            elo: user.elo,
+            winStreak: user.winStreak,
+            longestWinStreak: user.longestWinStreak,
+            averagePointsScored: Double(user.totalPointsScored) / max(1, Double(user.totalMatches)),
+            averagePointsConceded: Double(user.totalPointsConceded) / max(1, Double(user.totalMatches)),
+            pointsDifferential: user.pointsDifferential
         )
     }
 

@@ -789,7 +789,7 @@ struct OnboardingGradientBackground: View {
                 animateGradient = true
             }
         }
-        .onChange(of: page) { _ in
+        .onChange(of: page) { _, _ in
             withAnimation(.easeInOut(duration: 0.8)) {
                 animateGradient.toggle()
             }

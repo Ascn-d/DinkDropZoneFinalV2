@@ -54,10 +54,9 @@ struct StatefulPreviewWrapper<Value, Content: View>: View {
     }
 }
 
-#Preview {
+#Preview("Hamburger Button") {
     StatefulPreviewWrapper(false) { isActive in
         HamburgerButton(isActive: isActive)
-            .previewLayout(.sizeThatFits)
             .padding()
     }
 } 

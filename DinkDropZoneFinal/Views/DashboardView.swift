@@ -1,16 +1,38 @@
 import SwiftUI
-import Observation
+import Charts
+import SwiftData
+
+// MARK: - GameMatch Wrapper
+
+/// Wrapper to bridge GameMatch to Match interface
+struct GameMatchWrapper {
+    let gameMatch: GameMatch
+    
+    var id: UUID { gameMatch.id }
+    var date: Date { gameMatch.date }
+    var score: String { gameMatch.score }
+    var eloChange: String { gameMatch.eloChange }
+    
+    func opponent(for user: User) -> String {
+        return gameMatch.opponentName
+    }
+    
+    func result(for user: User) -> String {
+        return gameMatch.result
+    }
+}
+
+// GameMatchWrapper provides a bridge between GameMatch and expected interface
 
 struct DashboardView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @Environment(XPManager.self) private var xpManager
     @State private var selectedTimeFrame: TimeFrame = .week
     @State private var selectedMetric: PerformanceChartView.PerformanceMetric = .elo
     @State private var isRefreshing = false
     @State private var performanceData: [PerformanceData] = []
     @State private var showingMatchmaking = false
-    @State private var showingPractice = false
-    @State private var showingTournament = false
+    @State private var showingNearbyPlayers = false
     @State private var showingStatistics = false
     @State private var showingProfile = false
     @State private var showingMissions = false
@@ -32,410 +54,502 @@ struct DashboardView: View {
     }
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Welcome header
-                welcomeHeader
-                
-                // Enhanced Stats Overview
-                if let user = appState.currentUser {
-                    enhancedStatsOverview(user: user)
-                }
-                
-                // Live Activity Feed
-                liveActivitySection
-                
-                // Quick Actions
-                enhancedQuickActions
-                
-                // Performance Chart
-                performanceChart
-                
-                // Recent Activity
-                recentActivity
-                
-                // Daily Challenges
-                dailyChallengesSection
-            }
-            .padding()
-        }
-        .navigationTitle("Dashboard")
-        .refreshable {
-            await refreshData()
-        }
-        .sheet(isPresented: $showingMatchmaking) {
-            MatchmakingView()
-        }
-        .sheet(isPresented: $showingPractice) {
-            PracticeView()
-        }
-        .sheet(isPresented: $showingTournament) {
-            TournamentView()
-        }
-        .sheet(isPresented: $showingStatistics) {
-            if let user = appState.currentUser {
-                StatisticsView(user: user)
-            }
-        }
-        .sheet(isPresented: $showingProfile) {
-            ProfileView()
-        }
-        .sheet(isPresented: $showingMissions) {
-            MissionsView()
-        }
-        .onAppear {
-            loadPerformanceData()
-        }
-    }
-    
-    // MARK: - Welcome Header
-    
-    private var welcomeHeader: some View {
-        VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(getGreeting())
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // Welcome Header with enhanced styling
+                    welcomeHeaderEnhanced
                     
-                    if let user = appState.currentUser {
-                        Text(user.displayName.isEmpty ? "Player" : user.displayName)
-                            .font(.title2)
-                            .fontWeight(.bold)
+                    // Main content with modern sections
+                    VStack(spacing: DS.Layout.sectionSpacing) {
+                        // Enhanced Stats Overview
+                        if let user = appState.currentUser {
+                            DSModernSectionContainer(
+                                title: "Your Performance",
+                                subtitle: "Track your progress and achievements",
+                                action: { showingStatistics = true }
+                            ) {
+                                enhancedStatsGridModern(user: user)
+                            }
+                        }
+                        
+                        // Quick Actions with modern cards
+                        DSModernSectionContainer(
+                            title: "Quick Actions",
+                            subtitle: "Find matches and connect with players"
+                        ) {
+                            quickActionsModernGrid
+                        }
+                        
+                        // Nearby Players Section with enhanced design
+                        DSModernSectionContainer(
+                            title: "Nearby Players",
+                            subtitle: "\(appState.nearbyPlayers.count) players in your area",
+                            action: { showingNearbyPlayers = true }
+                        ) {
+                            nearbyPlayersModernView
+                        }
+                        
+                        // Performance Chart with enhanced styling
+                        DSModernSectionContainer(
+                            title: "Performance Analytics",
+                            subtitle: "Your game statistics over time"
+                        ) {
+                            performanceChartModernContent
+                        }
+                        
+                        // Daily Challenges with modern design
+                        DSModernSectionContainer(
+                            title: "Daily Missions",
+                            subtitle: "Complete challenges to earn XP",
+                            action: { showingMissions = true }
+                        ) {
+                            dailyChallengesModernContent
+                        }
+                        
+                        // Recent Activity with enhanced cards
+                        DSModernSectionContainer(
+                            title: "Recent Activity",
+                            subtitle: "Your latest matches and achievements"
+                        ) {
+                            recentActivityModernContent
+                        }
                     }
-                }
-                
-                Spacer()
-                
-                // Profile button
-                Button {
-                    showingProfile = true
-                } label: {
-                    Circle()
-                        .fill(Color.blue.opacity(0.2))
-                        .frame(width: 40, height: 40)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 18))
-                                .foregroundColor(.blue)
-                        )
+                    .dsHorizontalPadding()
+                    .padding(.bottom, 100) // Extra padding for tab bar
                 }
             }
-            
-            // Online status
-            HStack {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 8, height: 8)
-                    Text("\(appState.onlineUsersCount) players online")
-                        .font(.caption)
-                        .foregroundColor(.green)
+            .refreshable {
+                await refreshData()
+            }
+            .sheet(isPresented: $showingMatchmaking) {
+                MatchmakingView()
+            }
+            .sheet(isPresented: $showingNearbyPlayers) {
+                if let sheet = appState.nearbyPlayersSheet {
+                    sheet
                 }
-                
-                Spacer()
-                
-                Text("Ready to play? 🏓")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            }
+            .sheet(isPresented: $showingStatistics) {
+                if let user = appState.currentUser {
+                    StatisticsView(user: user)
+                }
+            }
+            .sheet(isPresented: $showingProfile) {
+                ProfileView()
+            }
+            .sheet(isPresented: $showingMissions) {
+                MissionsView()
+            }
+            .onAppear {
+                loadPerformanceData()
+                animateOnAppear()
             }
         }
     }
     
-    // MARK: - Enhanced Stats Overview
+    // MARK: - Enhanced Welcome Header
     
-    private func enhancedStatsOverview(user: User) -> some View {
+    private var welcomeHeaderEnhanced: some View {
+        ZStack {
+            // Enhanced gradient background
+            LinearGradient(
+                colors: [
+                    DS.Color.accent.opacity(0.8),
+                    DS.Color.accentAlt.opacity(0.6),
+                    DS.Color.accent.opacity(0.4)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .frame(height: 200)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 24,
+                    bottomTrailingRadius: 24,
+                    topTrailingRadius: 0
+                )
+            )
+            .overlay(
+                // Subtle pattern overlay
+                Circle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 300, height: 300)
+                    .offset(x: 100, y: -50)
+                    .blur(radius: 20)
+            )
+            
+            VStack(spacing: 20) {
+                // Top section with greeting and profile
+                HStack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(getGreeting())
+                            .font(DS.Font.subheadline)
+                            .foregroundColor(.white.opacity(0.9))
+                        
+                        if let user = appState.currentUser {
+                            Text(user.displayName.isEmpty ? "Player" : user.displayName)
+                                .font(DS.Font.title)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
+                        
+                        // Status indicators
+                        HStack(spacing: 12) {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                                
+                                Text("Online")
+                                    .font(DS.Font.caption2)
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.2))
+                            .clipShape(Capsule())
+                            
+                            if let user = appState.currentUser {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: 10))
+                                    Text("Level \(XPManager.calculateLevel(from: user.xp))")
+                                        .font(DS.Font.caption2)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.white.opacity(0.9))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.2))
+                                .clipShape(Capsule())
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Enhanced profile button
+                    Button {
+                        showingProfile = true
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.2))
+                                .frame(width: 60, height: 60)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.3), lineWidth: 2)
+                                )
+                            
+                            if let user = appState.currentUser, let imageURL = user.profileImageURL, !imageURL.isEmpty {
+                                AsyncImage(url: URL(string: imageURL)) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                }
+                                .frame(width: 56, height: 56)
+                                .clipShape(Circle())
+                            } else {
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, DS.Layout.horizontalPadding)
+                .padding(.top, 20)
+                
+                // Quick stats summary
+                if let user = appState.currentUser {
+                    HStack(spacing: 20) {
+                        ForEach([
+                            ("ELO", "\(user.elo)", "chart.line.uptrend.xyaxis"),
+                            ("Matches", "\(user.totalMatches)", "gamecontroller.fill"),
+                            ("Win Rate", String(format: "%.0f%%", user.winRate * 100), "trophy.fill")
+                        ], id: \.0) { stat in
+                            VStack(spacing: 4) {
+                                Image(systemName: stat.2)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                                
+                                Text(stat.1)
+                                    .font(DS.Font.headline)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                
+                                Text(stat.0)
+                                    .font(DS.Font.caption2)
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.horizontal, DS.Layout.horizontalPadding)
+                    .padding(.bottom, 20)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Modern Stats Grid
+    
+    private func enhancedStatsGridModern(user: User) -> some View {
         VStack(spacing: 16) {
-            HStack {
-                Text("Your Performance")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button("View Details") {
-                    showingStatistics = true
-                }
-                .font(.caption)
-                .foregroundColor(.blue)
-            }
+            // Featured stat card
+            FeaturedStatsCard(
+                title: "Current Rating",
+                primaryValue: "\(user.elo)",
+                primaryLabel: "ELO Points",
+                secondaryStats: [
+                    ("\(user.wins)", "Wins"),
+                    ("\(user.losses)", "Losses"),
+                    (String(format: "%.0f%%", user.winRate * 100), "Win Rate")
+                ],
+                icon: "chart.bar.fill",
+                color: DS.Color.accent
+            )
             
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 16) {
-                AnimatedStatsCard(
-                    title: "ELO Rating",
-                    value: "\(user.elo)",
-                    subtitle: getELORank(user.elo),
+            // Compact stats grid
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                CompactStatsCard(
+                    title: "Level",
+                    value: "\(XPManager.calculateLevel(from: user.xp))",
                     icon: "star.fill",
-                    color: eloColor(for: user.elo),
-                    animationDelay: 0.0
-                )
-                
-                AnimatedStatsCard(
-                    title: "Win Rate",
-                    value: "\(calculateWinRate())%",
-                    subtitle: "Last 30 days",
-                    icon: "chart.line.uptrend.xyaxis",
-                    color: winRateColor(for: Double(calculateWinRate()) / 100.0),
-                    animationDelay: 0.1
-                )
-                
-                AnimatedStatsCard(
-                    title: "Experience",
-                    value: "\(xpManager.currentXP)",
-                    subtitle: "Level \(xpManager.currentLevel)",
-                    icon: "bolt.fill",
                     color: .orange,
-                    animationDelay: 0.2
+                    showRing: true,
+                    ringProgress: Double(user.xp % 1000) / 1000.0
                 )
                 
-                AnimatedStatsCard(
-                    title: "Win Streak",
+                CompactStatsCard(
+                    title: "Streak",
                     value: "\(user.winStreak)",
-                    subtitle: user.winStreak > 0 ? "wins" : "games",
                     icon: "flame.fill",
-                    color: user.winStreak > 0 ? .red : .gray,
-                    animationDelay: 0.3
+                    color: user.winStreak > 0 ? .red : .gray
+                )
+                
+                CompactStatsCard(
+                    title: "XP",
+                    value: "\(user.xp)",
+                    icon: "bolt.fill",
+                    color: .blue
                 )
             }
         }
     }
     
-    // MARK: - Live Activity Section
+    // MARK: - Modern Quick Actions
     
-    private var liveActivitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Live Activity")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button("View All") {
-                    // Navigate to full activity feed
-                }
-                .font(.caption)
-                .foregroundColor(.blue)
-            }
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(getLiveActivities()) { activity in
-                        LiveActivityCard(activity: activity)
-                            .frame(width: 280)
-                    }
-                }
-                .padding(.horizontal, 4)
-            }
-        }
-    }
-    
-    // MARK: - Enhanced Quick Actions
-    
-    private var enhancedQuickActions: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Quick Actions")
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
+    private var quickActionsModernGrid: some View {
+        VStack(spacing: 12) {
+            // Primary actions
+            HStack(spacing: 12) {
                 QuickActionCard(
                     title: "Find Match",
-                    subtitle: "Join queue",
+                    subtitle: "Join matchmaking queue",
                     icon: "person.2.fill",
                     color: .blue,
-                    badge: "\(Int.random(in: 15...25))"
+                    badge: appState.queueCount > 0 ? "\(appState.queueCount)" : nil
                 ) {
                     showingMatchmaking = true
                 }
                 
                 QuickActionCard(
-                    title: "Practice",
-                    subtitle: "Skill training",
-                    icon: "figure.table.tennis",
+                    title: "Nearby Players",
+                    subtitle: "Find local players",
+                    icon: "location.fill",
                     color: .green,
-                    badge: nil
+                    badge: appState.nearbyPlayers.count > 0 ? "\(appState.nearbyPlayers.count)" : nil
                 ) {
-                    showingPractice = true
+                    showingNearbyPlayers = true
                 }
-                
-                QuickActionCard(
+            }
+            
+            // Secondary actions
+            HStack(spacing: 12) {
+                EnhancedQuickActionCard(
                     title: "Tournament",
-                    subtitle: "Compete",
+                    subtitle: "Join competitive play",
                     icon: "trophy.fill",
                     color: .orange,
-                    badge: "3 active"
+                    badge: "NEW",
+                    showChevron: true
                 ) {
-                    showingTournament = true
-                }
-            }
-        }
-    }
-    
-    // MARK: - Daily Challenges Section
-    
-    private var dailyChallengesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Daily Missions")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button("View All") {
-                    showingMissions = true
-                }
-                .font(.caption)
-                .foregroundColor(.blue)
-            }
-            
-            let dailyMissions = xpManager.getMissionsForDisplay().filter { $0.type.isDaily }.prefix(3)
-            
-            if dailyMissions.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.green)
-                    
-                    Text("All daily missions completed!")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    Text("Great job! Check back tomorrow for new missions.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(Array(dailyMissions)) { mission in
-                        CompactMissionCard(mission: mission)
-                    }
-                }
-            }
-        }
-    }
-    
-    private var quickActions: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Actions")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            HStack(spacing: 16) {
-                QuickActionButton(
-                    title: "Find Match",
-                    icon: "person.2.fill",
-                    color: .blue
-                ) {
-                    showingMatchmaking = true
+                    // Tournament action
                 }
                 
-                QuickActionButton(
+                EnhancedQuickActionCard(
                     title: "Practice",
-                    icon: "figure.table.tennis",
-                    color: .green
-                ) {
-                    showingPractice = true
-                }
-                
-                QuickActionButton(
-                    title: "Tournament",
-                    icon: "trophy.fill",
-                    color: .orange
-                ) {
-                    showingTournament = true
-                }
-                
-                QuickActionButton(
-                    title: "Missions",
+                    subtitle: "Improve your skills",
                     icon: "target",
-                    color: .purple
+                    color: .purple,
+                    isEnabled: false
                 ) {
-                    showingMissions = true
+                    // Practice action
                 }
             }
         }
     }
     
-    private var recentActivity: some View {
+    // MARK: - Modern Nearby Players
+    
+    private var nearbyPlayersModernView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Recent Activity")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button("See All") {
-                    // Navigate to full activity history
+            if appState.nearbyPlayers.isEmpty {
+                DSEmptyStateView(
+                    icon: "location.slash",
+                    title: "No nearby players",
+                    message: "Enable location services to find players near you"
+                )
+                .frame(height: 120)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(appState.nearbyPlayers.prefix(5), id: \.id) { player in
+                            NearbyPlayerModernCard(player: player)
+                        }
+                    }
+                    .padding(.horizontal, DS.Layout.horizontalPadding)
                 }
-                .font(.subheadline)
-                .foregroundColor(.blue)
-            }
-            
-            VStack(spacing: 12) {
-                ForEach(getRecentMatches()) { match in
-                    RecentMatchCard(
-                        opponent: match.opponent,
-                        result: match.result,
-                        score: match.score,
-                        eloChange: match.eloChange,
-                        date: match.date
-                    )
-                }
+                .padding(.horizontal, -DS.Layout.horizontalPadding)
             }
         }
     }
     
-    private var performanceChart: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Performance")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Picker("Metric", selection: $selectedMetric) {
-                    ForEach(PerformanceChartView.PerformanceMetric.allCases, id: \.self) { metric in
-                        Text(metric.rawValue).tag(metric)
+    // MARK: - Modern Performance Chart
+    
+    private var performanceChartModernContent: some View {
+        DSModernCard(style: .standard) {
+            VStack(spacing: 16) {
+                // Chart controls
+                VStack(spacing: 12) {
+                    Picker("Metric", selection: $selectedMetric) {
+                        ForEach(PerformanceChartView.PerformanceMetric.allCases, id: \.self) { metric in
+                            Text(metric.rawValue).tag(metric)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    Picker("Time Frame", selection: $selectedTimeFrame) {
+                        ForEach(TimeFrame.allCases, id: \.self) { timeFrame in
+                            Text(timeFrame.rawValue).tag(timeFrame)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedTimeFrame) { _, _ in
+                        loadPerformanceData()
                     }
                 }
-                .pickerStyle(.segmented)
-            }
-            
-            Picker("Time Frame", selection: $selectedTimeFrame) {
-                ForEach(TimeFrame.allCases, id: \.self) { timeFrame in
-                    Text(timeFrame.rawValue).tag(timeFrame)
+                
+                // Chart content
+                if performanceData.isEmpty {
+                    DSEmptyStateView(
+                        icon: "chart.line.uptrend.xyaxis",
+                        title: "No performance data yet",
+                        message: "Play more matches to see your progress"
+                    )
+                    .frame(height: 160)
+                } else {
+                    PerformanceChartView(
+                        data: performanceData.map { (date: $0.date, elo: $0.elo, winRate: $0.winRate) },
+                        selectedMetric: selectedMetric
+                    )
+                    .frame(height: 200)
                 }
             }
-            .pickerStyle(.segmented)
-            .onChange(of: selectedTimeFrame) { _, _ in
-                loadPerformanceData()
-            }
-            
-            PerformanceChartView(
-                data: performanceData,
-                selectedMetric: selectedMetric
-            )
         }
     }
+    
+    // MARK: - Modern Daily Challenges
+    
+         private var dailyChallengesModernContent: some View {
+         let dailyMissions = xpManager.getMissionsForDisplay().filter { $0.type.isDaily }.prefix(3)
+         
+         return Group {
+             if dailyMissions.isEmpty {
+                 DSModernCard(style: .gradient) {
+                     VStack(spacing: 12) {
+                         Image(systemName: "checkmark.circle.fill")
+                             .font(.system(size: 40))
+                             .foregroundColor(.green)
+                         
+                         Text("All daily missions completed!")
+                             .font(DS.Font.subheadline)
+                             .fontWeight(.semibold)
+                             .foregroundColor(DS.Color.primary)
+                         
+                         Text("Great job! Check back tomorrow for new missions.")
+                             .font(DS.Font.caption)
+                             .foregroundColor(DS.Color.secondary)
+                             .multilineTextAlignment(.center)
+                     }
+                     .frame(maxWidth: .infinity)
+                     .padding(.vertical, 20)
+                 }
+             } else {
+                 VStack(spacing: 12) {
+                     ForEach(Array(dailyMissions)) { mission in
+                         ModernMissionCard(mission: mission)
+                     }
+                 }
+             }
+         }
+     }
+    
+    // MARK: - Modern Recent Activity
+    
+         private var recentActivityModernContent: some View {
+         return Group {
+             if let recentMatches = appState.recentMatches, !recentMatches.isEmpty {
+                 VStack(spacing: 12) {
+                     ForEach(recentMatches.prefix(3)) { match in
+                         ModernRecentMatchCard(match: GameMatchWrapper(gameMatch: match))
+                     }
+                 }
+             } else {
+                 DSModernCard(style: .minimal) {
+                     VStack(spacing: 12) {
+                         Image(systemName: "sportscourt")
+                             .font(.system(size: 36))
+                             .foregroundColor(DS.Color.secondary.opacity(0.6))
+                         
+                         VStack(spacing: 4) {
+                             Text("No recent matches")
+                                 .font(DS.Font.subheadline)
+                                 .fontWeight(.medium)
+                                 .foregroundColor(DS.Color.secondary)
+                             
+                             Text("Join a match to see your activity here")
+                                 .font(DS.Font.caption)
+                                 .foregroundColor(DS.Color.secondary)
+                                 .multilineTextAlignment(.center)
+                         }
+                         
+                         DSPrimaryButton("Find Match", icon: "person.2.fill") {
+                             showingMatchmaking = true
+                         }
+                         .padding(.top, 8)
+                     }
+                     .frame(maxWidth: .infinity)
+                     .padding(.vertical, 20)
+                 }
+             }
+         }
+     }
     
     // MARK: - Helper Functions
+    
+    private func animateOnAppear() {
+        // Add entrance animations for elements
+        withAnimation(.easeInOut(duration: 0.8).delay(0.2)) {
+            // Trigger any entrance animations
+        }
+    }
     
     private func getGreeting() -> String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -447,351 +561,128 @@ struct DashboardView: View {
         }
     }
     
-    private func getELORank(_ elo: Int) -> String {
-        switch elo {
-        case 0..<1000: return "Bronze"
-        case 1000..<1300: return "Silver"
-        case 1300..<1600: return "Gold"
-        case 1600..<1900: return "Platinum"
-        case 1900..<2200: return "Diamond"
-        case 2200..<2500: return "Master"
-        default: return "Legend"
-        }
-    }
-    
-    private func eloColor(for elo: Int) -> Color {
-        switch elo {
-        case 0..<1000: return Color.orange.opacity(0.8)
-        case 1000..<1300: return .gray
-        case 1300..<1600: return .yellow
-        case 1600..<1900: return .cyan
-        case 1900..<2200: return .blue
-        case 2200..<2500: return .purple
-        default: return .red
-        }
-    }
-    
-    private func winRateColor(for winRate: Double) -> Color {
-        switch winRate {
-        case 0.0..<0.4: return .red
-        case 0.4..<0.6: return .orange
-        case 0.6..<0.8: return .blue
-        default: return .green
-        }
-    }
-    
-    private func getLiveActivities() -> [LiveActivity] {
-        return [
-            LiveActivity(
-                type: .match,
-                title: "Sarah vs Mike",
-                description: "Intense match at Golden Gate Park",
-                isLive: true,
-                metadata: ["Court": "1", "Score": "8-6"],
-                pulseAnimation: true
-            ),
-            LiveActivity(
-                type: .tournament,
-                title: "Friday Championship",
-                description: "Semi-finals starting now",
-                isLive: true,
-                metadata: ["Players": "8", "Round": "Semi"],
-                pulseAnimation: true
-            ),
-            LiveActivity(
-                type: .achievement,
-                title: "Emma's Milestone",
-                description: "Reached 1800 ELO rating!",
-                timestamp: Date().addingTimeInterval(-300),
-                isLive: false,
-                metadata: ["ELO": "1800", "Rank": "Platinum"]
-            )
-        ]
-    }
-    
     private func loadPerformanceData() {
-        performanceData = PerformanceData.generateSampleData(days: selectedTimeFrame.days)
+        if let user = appState.currentUser {
+            // In a real app, we'd fetch this from a service
+            // For now, generate sample data based on the user's actual stats
+            var data: [PerformanceData] = []
+            let calendar = Calendar.current
+            let today = Date()
+            
+            var currentElo = max(1000, user.elo - Int(Double(user.elo - 1000) * 0.3))
+            var totalMatches = max(0, user.totalMatches - Int(Double(user.totalMatches) * 0.8))
+            var totalWins = max(0, user.wins - Int(Double(user.wins) * 0.8))
+            
+            for day in (0..<selectedTimeFrame.days).reversed() {
+                let date = calendar.date(byAdding: .day, value: -day, to: today)!
+                
+                // Generate random matches for the day (0-3 matches)
+                let matchesToday = Int.random(in: 0...3)
+                let winsToday = Int.random(in: 0...matchesToday)
+                
+                // Update totals
+                totalMatches += matchesToday
+                totalWins += winsToday
+                
+                // Calculate ELO change (trending upward toward current ELO)
+                let eloTarget = user.elo
+                let eloChange = min(20, max(-20, (eloTarget - currentElo) / 10))
+                currentElo += Int(eloChange)
+                
+                data.append(PerformanceData(
+                    date: date,
+                    elo: currentElo,
+                    matches: totalMatches,
+                    wins: totalWins
+                ))
+            }
+            
+            performanceData = data
+        } else {
+            performanceData = []
+        }
     }
     
     private func refreshData() async {
         isRefreshing = true
-        // Simulate network delay
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        // Refresh nearby players
+        if let locationService = appState.locationService {
+            if let loc = locationService.currentLocation {
+                try? await FirebaseService.shared.updateLocation(
+                    lat: loc.coordinate.latitude,
+                    lon: loc.coordinate.longitude
+                )
+                
+                if let nearbyService = appState.nearbyPlayersService {
+                    // This will update appState.nearbyPlayers
+                    await nearbyService.fetchNearby(center: loc)
+                }
+            }
+        }
+        
+        // Refresh performance data
         loadPerformanceData()
+        
+        // Refresh missions
+        xpManager.checkMissionUpdates()
+        
         isRefreshing = false
     }
-    
-    private func calculateEloChange() -> String {
-        guard performanceData.count >= 2 else { return "+0" }
-        let change = performanceData.last!.elo - performanceData.first!.elo
-        return change >= 0 ? "+\(change)" : "\(change)"
-    }
-    
-    private func calculateXPChange() -> String {
-        // Simulate XP change
-        return "+\(Int.random(in: 50...150))"
-    }
-    
-    private func calculateWinRate() -> Int {
-        guard !performanceData.isEmpty else { return 0 }
-        let latest = performanceData.last!
-        return Int(latest.winRate * 100)
-    }
-    
-    private func calculateWinRateChange() -> String {
-        guard performanceData.count >= 2 else { return "+0%" }
-        let current = performanceData.last!.winRate
-        let previous = performanceData[performanceData.count - 2].winRate
-        let change = Int((current - previous) * 100)
-        return change >= 0 ? "+\(change)%" : "\(change)%"
-    }
-    
-    private func calculateTotalMatches() -> Int {
-        guard !performanceData.isEmpty else { return 0 }
-        return performanceData.last!.matches
-    }
-    
-    private func calculateMatchesChange() -> String {
-        guard performanceData.count >= 2 else { return "+0" }
-        let current = performanceData.last!.matches
-        let previous = performanceData[performanceData.count - 2].matches
-        let change = current - previous
-        return change >= 0 ? "+\(change)" : "\(change)"
-    }
-    
-    private func getRecentMatches() -> [RecentMatch] {
-        // TODO: Implement actual recent matches fetching
-        // Sample placeholder data
-        return [
-            RecentMatch(opponent: "Alex Turner", result: "Win", score: "11-8", eloChange: "+10", date: Date()),
-            RecentMatch(opponent: "Emma Wilson", result: "Loss", score: "9-11", eloChange: "-8", date: Date().addingTimeInterval(-3600))
-        ]
-    }
-}
-
-// MARK: - Supporting Types
-
-struct RecentMatch: Identifiable {
-    let id = UUID()
-    let opponent: String
-    let result: String
-    let score: String
-    let eloChange: String
-    let date: Date
 }
 
 // MARK: - Supporting Views
 
-struct QuickActionCard: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let color: Color
-    let badge: String?
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(color.opacity(0.2))
-                        .frame(width: 50, height: 50)
-                    
-                    Image(systemName: icon)
-                        .font(.title2)
-                        .foregroundColor(color)
-                    
-                    if let badge = badge {
-                        Text(badge)
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.red)
-                            .clipShape(Capsule())
-                            .offset(x: 20, y: -20)
-                    }
-                }
-                
-                VStack(spacing: 2) {
-                    Text(title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(12)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
-struct DailyChallengeCard: View {
-    let challenge: DailyChallenge
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Challenge icon
-            ZStack {
-                Circle()
-                    .fill(challenge.type.color.opacity(0.2))
-                    .frame(width: 40, height: 40)
-                
-                Image(systemName: challenge.type.icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(challenge.type.color)
-            }
-            
-            // Challenge info
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(challenge.type.title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    
-                    Spacer()
-                    
-                    if challenge.isCompleted {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                    } else {
-                        Text("\(challenge.xpReward) XP")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.orange)
-                    }
-                }
-                
-                Text(challenge.type.description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                // Progress bar
-                if !challenge.isCompleted {
-                    ProgressView(value: Double(challenge.progress), total: Double(challenge.type.targetValue))
-                        .progressViewStyle(LinearProgressViewStyle(tint: challenge.type.color))
-                        .scaleEffect(x: 1, y: 0.5, anchor: .center)
-                }
-            }
-        }
-        .padding()
-        .background(
-            challenge.isCompleted ? 
-            Color.green.opacity(0.1) : 
-            Color(.secondarySystemBackground)
-        )
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(
-                    challenge.isCompleted ? 
-                    Color.green.opacity(0.3) : 
-                    Color.clear, 
-                    lineWidth: 1
-                )
-        )
-    }
-}
-
-struct QuickActionButton: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(color)
-                
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(12)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
 struct RecentMatchCard: View {
-    let opponent: String
-    let result: String
-    let score: String
-    let eloChange: String
-    let date: Date
+    let match: GameMatch
     
     private var formattedDate: String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return formatter.localizedString(for: match.date, relativeTo: Date())
     }
     
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(opponent)
-                    .font(.headline)
+                Text(match.opponentName)
+                    .font(DS.Font.headline)
                 Text(formattedDate)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(DS.Font.caption)
+                    .foregroundColor(DS.Color.secondary)
             }
             
             Spacer()
             
             VStack(alignment: .trailing, spacing: 4) {
-                Text(result)
-                    .font(.headline)
-                    .foregroundColor(result == "Win" ? .green : .red)
-                Text(score)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Text(eloChange)
-                    .font(.caption)
-                    .foregroundColor(eloChange.hasPrefix("+") ? .green : .red)
+                Text(match.result)
+                    .font(DS.Font.headline)
+                    .foregroundColor(match.result == "Win" ? .green : .red)
+                Text(match.score)
+                    .font(DS.Font.subheadline)
+                    .foregroundColor(DS.Color.secondary)
+                Text(match.eloChange)
+                    .font(DS.Font.caption)
+                    .foregroundColor(match.eloChange.hasPrefix("+") ? .green : .red)
             }
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-        )
+        .background(DS.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
     }
 }
 
-// MARK: - Placeholder Views
+// MARK: - View Extensions
 
-struct PracticeView: View {
-    var body: some View {
-        Text("Practice View")
-    }
-}
-
-struct TournamentView: View {
-    var body: some View {
-        Text("Tournament View")
+extension View {
+    func eraseToAnyView() -> AnyView {
+        AnyView(self)
     }
 }
 
 #Preview {
     NavigationStack {
         DashboardView()
-            .environment(AppState())
+            .environmentObject(AppState())
+            .environment(XPManager())
     }
 } 

@@ -3,7 +3,7 @@ import FirebaseAuth
 
 struct EmailAuthView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     
     @State private var email = ""
     @State private var password = ""
@@ -218,55 +218,28 @@ struct EmailAuthView: View {
     private func handleAuthentication() async {
         isLoading = true
         errorMessage = nil
-        
+        let firebase = FirebaseService.shared
+
         do {
+            let user: User
             if isSignUp {
-                // Create account
-                let authResult = try await Auth.auth().createUser(withEmail: email, password: password)
-                
-                // Update display name
-                let changeRequest = authResult.user.createProfileChangeRequest()
-                changeRequest.displayName = fullName
-                try await changeRequest.commitChanges()
-                
-                // Create user in your system
-                let user = User(
-                    email: email,
-                    password: password,
-                    elo: 1000,
-                    xp: 0,
-                    totalMatches: 0,
-                    wins: 0,
-                    losses: 0,
-                    winStreak: 0
-                )
-                user.displayName = fullName
-                
-                appState.updateUser(user)
+                user = try await firebase.signUp(email: email, password: password, displayName: fullName)
             } else {
-                // Sign in
-                try await Auth.auth().signIn(withEmail: email, password: password)
-                
-                // Create or fetch user
-                let user = User(
-                    email: email,
-                    password: password,
-                    elo: 1000,
-                    xp: 0,
-                    totalMatches: 0,
-                    wins: 0,
-                    losses: 0,
-                    winStreak: 0
-                )
-                
-                appState.updateUser(user)
+                user = try await firebase.signIn(email: email, password: password)
             }
-            
+            appState.updateUser(user)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
+
+            // Surface the error as a notification banner too
+            appState.pushNotification(AppNotification(
+                type: .error,
+                title: "Authentication Failed",
+                message: error.localizedDescription,
+                data: [:]
+            ))
         }
-        
         isLoading = false
     }
 }
@@ -359,5 +332,5 @@ struct CustomSecureField: View {
 
 #Preview {
     EmailAuthView()
-        .environment(AppState())
+        .environmentObject(AppState())
 } 

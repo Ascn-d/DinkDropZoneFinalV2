@@ -1,7 +1,8 @@
 import Foundation
 import SwiftData
-import Observation
 import SwiftUI
+import FirebaseAuth
+import FirebaseFirestore
 
 @MainActor
 @Observable
@@ -27,6 +28,17 @@ final class XPManager {
     var dailyStats: DailyStats = DailyStats()
     var weeklyStats: WeeklyStats = WeeklyStats()
     var lifetimeStats: LifetimeStats = LifetimeStats()
+    
+    // Default initializer for previews
+    init() {
+        self.modelContext = ModelContext(try! ModelContainer(for: User.self, configurations: ModelConfiguration()))
+        loadUserProgress()
+        generateDailyMissions()
+        checkForNewTrophies()
+        
+        // Listen for notifications to trigger UI updates
+        setupNotificationObservers()
+    }
     
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -183,7 +195,7 @@ final class XPManager {
         updateStats(for: reward, amount: xpAmount)
         
         // Check mission progress
-        updateMissionProgress(for: reward)
+        updateMissions(for: reward)
         
         // Check for new trophies
         checkForNewTrophies()
@@ -260,19 +272,12 @@ final class XPManager {
     // MARK: - Mission System
     
     func generateDailyMissions() {
-        let today = Calendar.current.startOfDay(for: Date())
-        
-        // Clear old missions
-        activeMissions.removeAll { mission in
-            mission.type.isDaily && !Calendar.current.isDate(mission.createdAt, inSameDayAs: today)
-        }
-        
-        // Generate new daily missions if needed
+        // Check if we already have enough daily missions
         let dailyMissions = activeMissions.filter { $0.type.isDaily }
         if dailyMissions.count < 3 {
             let newMissions = MissionType.dailyMissions.shuffled().prefix(3 - dailyMissions.count)
             for missionType in newMissions {
-                let mission = Mission(type: missionType, createdAt: today)
+                let mission = Mission(type: missionType)
                 activeMissions.append(mission)
             }
         }
@@ -285,13 +290,12 @@ final class XPManager {
     }
     
     private func generateWeeklyMissions() {
-        let weekStart = Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
-        
+        // Check if we already have weekly missions
         let weeklyMissions = activeMissions.filter { $0.type.isWeekly }
         if weeklyMissions.isEmpty {
             let newMissions = MissionType.weeklyMissions.shuffled().prefix(2)
             for missionType in newMissions {
-                let mission = Mission(type: missionType, createdAt: weekStart)
+                let mission = Mission(type: missionType)
                 activeMissions.append(mission)
             }
         }
@@ -302,18 +306,18 @@ final class XPManager {
         if achievementMissions.count < 2 {
             let newMissions = MissionType.achievementMissions.shuffled().prefix(2 - achievementMissions.count)
             for missionType in newMissions {
-                let mission = Mission(type: missionType, createdAt: Date())
+                let mission = Mission(type: missionType)
                 activeMissions.append(mission)
             }
         }
     }
     
-    func updateMissionProgress(for reward: XPReward) {
+    private func updateMissions(for reward: XPReward) {
         for i in 0..<activeMissions.count where !activeMissions[i].isCompleted {
             let oldProgress = activeMissions[i].progress
             activeMissions[i].updateProgress(for: reward)
             
-            if activeMissions[i].isCompleted && oldProgress < activeMissions[i].targetValue {
+            if activeMissions[i].isCompleted && oldProgress < activeMissions[i].type.targetValue {
                 completeMission(activeMissions[i])
             }
         }
@@ -357,96 +361,74 @@ final class XPManager {
     }
     
     private func checkMatchBasedTrophies() {
-        let matchTrophies: [(TrophyType, () -> Bool)] = [
-            (.firstWin, { self.lifetimeStats.matchesWon >= 1 }),
-            (.winStreak5, { self.lifetimeStats.longestWinStreak >= 5 }),
-            (.winStreak10, { self.lifetimeStats.longestWinStreak >= 10 }),
-            (.perfectionist, { self.lifetimeStats.perfectGames >= 1 }),
-            (.centurion, { self.lifetimeStats.matchesPlayed >= 100 }),
-            (.champion, { self.lifetimeStats.tournamentsWon >= 1 }),
-            (.grandSlam, { self.lifetimeStats.tournamentsWon >= 5 }),
-        ]
+        // Check gameplay achievements
+        if lifetimeStats.matchesWon > 0 && !hasTrophy(.gameplay) {
+            unlockTrophy(.gameplay)
+        }
         
-        for (trophyType, condition) in matchTrophies {
-            if condition() && !hasTrophy(trophyType) {
-                unlockTrophy(trophyType)
-            }
+        if lifetimeStats.matchesPlayed >= 100 && !hasTrophy(.competitive) {
+            unlockTrophy(.competitive)
         }
     }
     
     private func checkSocialTrophies() {
-        let socialTrophies: [(TrophyType, () -> Bool)] = [
-            (.socialButterfly, { self.lifetimeStats.friendsAdded >= 10 }),
-            (.messenger, { self.lifetimeStats.messagesSent >= 100 }),
-            (.teamPlayer, { self.lifetimeStats.socialMatches >= 25 }),
-        ]
-        
-        for (trophyType, condition) in socialTrophies {
-            if condition() && !hasTrophy(trophyType) {
-                unlockTrophy(trophyType)
-            }
+        if lifetimeStats.friendsAdded >= 10 && !hasTrophy(.social) {
+            unlockTrophy(.social)
         }
     }
     
     private func checkLevelBasedTrophies() {
-        let levelTrophies: [(TrophyType, Int)] = [
-            (.rookie, 5),
-            (.veteran, 10),
-            (.expert, 25),
-            (.master, 50),
-            (.legend, 100)
-        ]
-        
-        for (trophyType, requiredLevel) in levelTrophies {
-            if currentLevel >= requiredLevel && !hasTrophy(trophyType) {
-                unlockTrophy(trophyType)
-            }
+        if currentLevel >= 25 && !hasTrophy(.progression) {
+            unlockTrophy(.progression)
         }
     }
     
     private func checkMissionBasedTrophies() {
-        let missionTrophies: [(TrophyType, () -> Bool)] = [
-            (.taskmaster, { self.completedMissions.count >= 50 }),
-            (.dedicated, { self.lifetimeStats.dailyLogins >= 30 }),
-            (.consistent, { self.lifetimeStats.dailyLogins >= 100 }),
-        ]
-        
-        for (trophyType, condition) in missionTrophies {
-            if condition() && !hasTrophy(trophyType) {
-                unlockTrophy(trophyType)
-            }
+        if lifetimeStats.dailyLogins >= 30 && !hasTrophy(.seasonal) {
+            unlockTrophy(.seasonal)
         }
     }
     
     private func checkSpecialTrophies() {
         // Special condition trophies
-        if totalXPEarned >= 10000 && !hasTrophy(.xpCollector) {
-            unlockTrophy(.xpCollector)
+        if lifetimeStats.courtsVisited >= 10 && !hasTrophy(.exploration) {
+            unlockTrophy(.exploration)
         }
         
-        if lifetimeStats.courtsVisited >= 10 && !hasTrophy(.explorer) {
-            unlockTrophy(.explorer)
+        if totalXPEarned >= 10000 && !hasTrophy(.secret) {
+            unlockTrophy(.secret)
         }
     }
     
-    private func hasTrophy(_ type: TrophyType) -> Bool {
-        return unlockedTrophies.contains { $0.type == type }
+    private func hasTrophy(_ category: AchievementCategory) -> Bool {
+        return unlockedTrophies.contains(where: { $0.category == category })
     }
     
-    private func unlockTrophy(_ type: TrophyType) {
-        let trophy = Trophy(type: type, unlockedAt: Date())
+    private func unlockTrophy(_ category: AchievementCategory) {
+        // Create a simple trophy for now - in a real implementation this would use the achievement definitions
+        let trophy = Trophy(
+            title: category.rawValue,
+            description: "Achievement unlocked",
+            category: category,
+            tier: .bronze,
+            icon: category.icon,
+            conditions: []
+        )
         unlockedTrophies.append(trophy)
         
         // Award trophy XP
         awardXP(.achievementUnlock)
         
-        LoggingService.shared.log("Trophy unlocked: \(type.title)")
+        LoggingService.shared.log("Trophy unlocked: \(category.rawValue)")
         
         NotificationCenter.default.post(
             name: .trophyUnlocked,
-            object: trophy,
-            userInfo: ["type": type]
+            object: nil,
+            userInfo: ["trophy": trophy]
         )
+        
+        // Save trophies
+        saveUserProgress()
     }
     
     // MARK: - Stats Tracking
@@ -577,6 +559,51 @@ final class XPManager {
         awardXP(.dailyChallengeComplete)
     }
     
+    // MARK: - Mission Updates
+    
+    func checkMissionUpdates() {
+        // Check all active missions for updates
+        for i in 0..<activeMissions.count {
+            let mission = activeMissions[i]
+            
+            // Skip completed missions
+            if mission.isCompleted {
+                continue
+            }
+            
+            // Check if mission should be updated based on user stats
+            if let user = getCurrentUser() {
+                switch mission.type {
+                case .playMatches:
+                    if user.totalMatches > 0 {
+                        _ = activeMissions[i].updateProgress(to: min(mission.type.targetValue, user.totalMatches))
+                    }
+                case .winMatches:
+                    if user.wins > 0 {
+                        _ = activeMissions[i].updateProgress(to: min(mission.type.targetValue, user.wins))
+                    }
+                case .scorePoints:
+                    if user.totalPointsScored > 0 {
+                        _ = activeMissions[i].updateProgress(to: min(mission.type.targetValue, user.totalPointsScored))
+                    }
+                // Add cases for other mission types as needed
+                default:
+                    break
+                }
+            }
+        }
+        
+        // Save updated missions
+        saveUserProgress()
+    }
+    
+    // Helper method to get the current user
+    private func getCurrentUser() -> User? {
+        // In a real app, we would inject the AppState or use a shared instance
+        // For now, we'll just return nil and rely on manual mission updates
+        return nil
+    }
+    
     // MARK: - Data Persistence
     
     private func saveUserProgress() {
@@ -653,15 +680,31 @@ final class XPManager {
     }
     
     func getMissionsForDisplay() -> [Mission] {
-        return activeMissions.filter { !$0.isCompleted }
+        // Combine active and completed missions
+        var missions = activeMissions
+        
+        // Sort by completion status, then by type (daily first, then weekly)
+        missions.sort { (mission1, mission2) in
+            if mission1.isCompleted != mission2.isCompleted {
+                return !mission1.isCompleted
+            }
+            
+            if mission1.type.isDaily != mission2.type.isDaily {
+                return mission1.type.isDaily
+            }
+            
+            return mission1.type.rawValue < mission2.type.rawValue
+        }
+        
+        return missions
     }
     
     func getRecentTrophies(limit: Int = 5) -> [Trophy] {
-        return Array(unlockedTrophies.sorted { $0.unlockedAt > $1.unlockedAt }.prefix(limit))
+        return Array(unlockedTrophies.sorted { ($0.unlockedAt ?? Date.distantPast) > ($1.unlockedAt ?? Date.distantPast) }.prefix(limit))
     }
     
     func getTrophyProgress() -> (unlocked: Int, total: Int) {
-        return (unlockedTrophies.count, TrophyType.allCases.count)
+        return (unlockedTrophies.count, AchievementCategory.allCases.count)
     }
     
     // MARK: - Static Helper Methods
@@ -681,20 +724,50 @@ final class XPManager {
         if level <= 1 { return 0 }
         return (level - 1) * (level - 1) * 100
     }
+    
+    // MARK: - Firebase Integration
+    
+    private func saveTrophiesToFirebase() {
+        // Implementation to save trophies to Firebase
+        Task {
+            guard let currentUser = Auth.auth().currentUser else { return }
+            
+            // Convert trophies to a format suitable for Firestore
+            let trophyData = unlockedTrophies.map { trophy -> [String: Any] in
+                return [
+                    "id": trophy.id.uuidString,
+                    "category": trophy.category.rawValue,
+                    "unlockedAt": trophy.unlockedAt ?? Date()
+                ]
+            }
+            
+            do {
+                // Update the user document in Firestore directly instead of using the User model
+                let db = Firestore.firestore()
+                try await db.collection("users").document(currentUser.uid).updateData([
+                    "trophies": trophyData,
+                    "lastUpdated": FieldValue.serverTimestamp()
+                ])
+                
+                LoggingService.shared.log("Saved \(trophyData.count) trophies to Firebase")
+            } catch {
+                LoggingService.shared.log("Failed to save trophies to Firebase: \(error.localizedDescription)", level: .error)
+            }
+        }
+    }
 }
 
 // MARK: - Notification Extensions
 
 extension Notification.Name {
-    static let xpAwarded = Notification.Name("xpAwarded")
-    static let userLeveledUp = Notification.Name("userLeveledUp")
-    static let missionCompleted = Notification.Name("missionCompleted")
-    static let trophyUnlocked = Notification.Name("trophyUnlocked")
-    
-    // Notification manager notifications
-    static let showXPNotification = Notification.Name("showXPNotification")
-    static let showLevelUpNotification = Notification.Name("showLevelUpNotification")
-    static let showMissionCompleteNotification = Notification.Name("showMissionCompleteNotification")
+    // These are already defined in AppState.swift
+    // static let userLeveledUp = Notification.Name("userLeveledUp")
+    // static let xpAwarded = Notification.Name("xpAwarded")
+    // static let missionCompleted = Notification.Name("missionCompleted")
+    // static let showXPNotification = Notification.Name("showXPNotification")
+    // static let showLevelUpNotification = Notification.Name("showLevelUpNotification")
+    // static let showMissionCompleteNotification = Notification.Name("showMissionCompleteNotification")
+    // static let trophyUnlocked = Notification.Name("trophyUnlocked")
 }
 
 // MARK: - Daily Challenge System
@@ -751,7 +824,7 @@ enum DailyChallengeType: String, CaseIterable, Codable {
     }
 }
 
-struct DailyChallenge: Codable, Identifiable {
+struct XPDailyChallenge: Codable, Identifiable {
     let id: UUID
     let type: DailyChallengeType
     let date: Date
@@ -786,7 +859,7 @@ struct DailyChallenge: Codable, Identifiable {
 
 // MARK: - Extensions
 
-extension DailyChallenge {
+extension XPDailyChallenge {
     static func calculateDailyChallengeXP(challengeType: DailyChallengeType) -> Int {
         switch challengeType {
         case .playMatch: return 50
@@ -796,4 +869,27 @@ extension DailyChallenge {
         case .winStreak: return 150
         }
     }
-} 
+}
+
+// MARK: - Extensions for MissionType
+
+extension MissionType {
+    static var dailyMissions: [MissionType] {
+        return [.playMatches, .winMatches, .scorePoints]
+    }
+    
+    static var weeklyMissions: [MissionType] {
+        return [.playTournament, .winStreak, .addFriends]
+    }
+    
+    static var achievementMissions: [MissionType] {
+        return [.perfectGame, .reachElo, .playWithFriends]
+    }
+}
+
+// MARK: - Notification Extensions
+
+// Remove duplicate declaration - already defined elsewhere
+// extension Notification.Name {
+//     static let trophyUnlocked = Notification.Name("trophyUnlocked")
+// } 

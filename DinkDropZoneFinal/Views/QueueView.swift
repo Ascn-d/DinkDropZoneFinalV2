@@ -1,9 +1,11 @@
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 struct QueueView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
+    @Environment(NearbyPlayersService.self) private var nearbyService
     @Query private var users: [User]
     @State private var isInQueue = false
     @State private var queuePosition = 0
@@ -575,11 +577,11 @@ struct QueueView: View {
     }
     
     private func getNearbyPlayersCount() -> Int {
-        return Int.random(in: 8...15)
+        return nearbyService.nearbyPlayers.count
     }
     
     private func getNearbyPlayers() -> [User] {
-        return Array(users.prefix(4))
+        return Array(nearbyService.nearbyPlayers.prefix(4))
     }
     
     private func getNearbyCourts() -> [CourtAvailability] {
@@ -669,31 +671,33 @@ struct QuickMatchCard: View {
 
 struct EnhancedNearbyPlayerCard: View {
     let player: User
+    @Environment(UserLocationService.self) private var locationService
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
                 // Player avatar
-                Circle()
-                    .fill(Color.blue.opacity(0.2))
-                    .frame(width: 50, height: 50)
-                    .overlay(
-                        Text(String(player.displayName.isEmpty ? player.email.prefix(1) : player.displayName.prefix(1)))
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.blue)
-                    )
-                    .overlay(
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 14, height: 14)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white, lineWidth: 2)
-                            )
-                            .offset(x: 18, y: 18)
-                    )
+                Group {
+                    if let urlStr = player.profileImageURL, let url = URL(string: urlStr) {
+                        AsyncImage(url: url) { img in
+                            img.resizable().scaledToFill()
+                        } placeholder: {
+                            placeholderAvatar
+                        }
+                    } else {
+                        placeholderAvatar
+                    }
+                }
+                .frame(width: 50, height: 50)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .offset(x: 18, y: 18)
+                )
                 
                 VStack(spacing: 2) {
                     Text(player.displayName.isEmpty ? 
@@ -707,15 +711,32 @@ struct EnhancedNearbyPlayerCard: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     
-                    Text("0.8 mi")
-                        .font(.caption2)
-                        .foregroundColor(.green)
+                    if let distanceText = distanceString() {
+                        Text(distanceText)
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
                 }
             }
             .frame(width: 80)
             .padding(.vertical, 8)
         }
         .buttonStyle(PlainButtonStyle())
+    }
+
+    private func distanceString() -> String? {
+        guard let myLoc = locationService.currentLocation,
+              let lat = player.lat, let lon = player.lon else { return nil }
+        let other = CLLocation(latitude: lat, longitude: lon)
+        let meters = myLoc.distance(from: other)
+        let miles = meters * 0.000621371
+        return String(format: "%.1f mi", miles)
+    }
+
+    private var placeholderAvatar: some View {
+        Circle()
+            .fill(Color.blue.opacity(0.2))
+            .overlay(Text(String(player.displayName.isEmpty ? player.email.prefix(1) : player.displayName.prefix(1))).font(.headline).foregroundColor(.blue))
     }
 }
 
@@ -1089,7 +1110,7 @@ private struct PreviewHelper {
         
         return QueueView()
             .modelContainer(container)
-        .environment(AppState())
+        .environmentObject(AppState())
     }
 }
 

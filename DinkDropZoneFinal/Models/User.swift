@@ -2,6 +2,21 @@ import Foundation
 import SwiftData
 import SwiftUI
 
+// Define UserGameResult directly in this file instead of importing it
+public struct UserGameResult: Codable {
+    public let isWin: Bool
+    public let pointsScored: Int
+    public let pointsConceded: Int
+    public let eloChange: Int
+    
+    public init(isWin: Bool, pointsScored: Int, pointsConceded: Int, eloChange: Int) {
+        self.isWin = isWin
+        self.pointsScored = pointsScored
+        self.pointsConceded = pointsConceded
+        self.eloChange = eloChange
+    }
+}
+
 enum UserError: LocalizedError {
     case invalidEmail
     case invalidELO
@@ -47,6 +62,9 @@ final class User: @unchecked Sendable {
     var longestWinStreak: Int
     var totalPointsScored: Int
     var totalPointsConceded: Int
+    // New: geographic coordinates for proximity features
+    var lat: Double?
+    var lon: Double?
     // Note: achievements and monthlyStats removed for SwiftData compatibility
     // These can be stored separately or as JSON data if needed
     
@@ -99,7 +117,8 @@ final class User: @unchecked Sendable {
         longestWinStreak: Int = 0,
         totalPointsScored: Int = 0,
         totalPointsConceded: Int = 0,
-
+        lat: Double? = nil,
+        lon: Double? = nil,
         joinDate: Date = Date(),
         coins: Int = 0,
         level: Int = 1,
@@ -131,6 +150,8 @@ final class User: @unchecked Sendable {
         self.longestWinStreak = longestWinStreak
         self.totalPointsScored = totalPointsScored
         self.totalPointsConceded = totalPointsConceded
+        self.lat = lat
+        self.lon = lon
 
         self.joinDate = joinDate
         self.coins = coins
@@ -165,7 +186,7 @@ final class User: @unchecked Sendable {
         return totalPointsScored - totalPointsConceded
     }
     
-    func updateMonthlyStats(for date: Date, matchResult: UserMatchResult) {
+    func updateMonthlyStats(for date: Date, matchResult: UserGameResult) {
         // Note: Monthly stats functionality removed for SwiftData compatibility
         // This can be implemented using separate models or JSON storage
     }
@@ -293,20 +314,6 @@ final class User: @unchecked Sendable {
 
 // MARK: - Supporting Types
 
-struct UserMatchResult: Codable {
-    let isWin: Bool
-    let pointsScored: Int
-    let pointsConceded: Int
-    let eloChange: Int
-    
-    init(isWin: Bool, pointsScored: Int, pointsConceded: Int, eloChange: Int) {
-        self.isWin = isWin
-        self.pointsScored = pointsScored
-        self.pointsConceded = pointsConceded
-        self.eloChange = eloChange
-    }
-}
-
 struct MonthlyStats: Codable {
     var matches: Int = 0
     var wins: Int = 0
@@ -323,7 +330,7 @@ struct MonthlyStats: Codable {
         matches - wins
     }
     
-    mutating func updateWith(result: UserMatchResult) {
+    mutating func updateWith(result: UserGameResult) {
         matches += 1
         if result.isWin {
             wins += 1

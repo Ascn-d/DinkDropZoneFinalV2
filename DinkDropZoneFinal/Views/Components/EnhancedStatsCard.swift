@@ -6,12 +6,15 @@ struct EnhancedStatsCard: View {
     let subtitle: String?
     let icon: String
     let color: Color
-    let trend: TrendDirection?
-    let trendValue: String?
-    let showGradient: Bool
+    let trend: StatTrend?
+    let progress: Double?
+    let maxValue: Double?
+    let showAnimation: Bool
     
-    enum TrendDirection {
-        case up, down, neutral
+    enum StatTrend {
+        case up(String)
+        case down(String)
+        case neutral
         
         var color: Color {
             switch self {
@@ -28,7 +31,17 @@ struct EnhancedStatsCard: View {
             case .neutral: return "minus"
             }
         }
+        
+        var text: String? {
+            switch self {
+            case .up(let value), .down(let value): return value
+            case .neutral: return nil
+            }
+        }
     }
+    
+    @State private var animateProgress = false
+    @State private var animateValue = false
     
     init(
         title: String,
@@ -36,9 +49,10 @@ struct EnhancedStatsCard: View {
         subtitle: String? = nil,
         icon: String,
         color: Color,
-        trend: TrendDirection? = nil,
-        trendValue: String? = nil,
-        showGradient: Bool = true
+        trend: StatTrend? = nil,
+        progress: Double? = nil,
+        maxValue: Double? = nil,
+        showAnimation: Bool = true
     ) {
         self.title = title
         self.value = value
@@ -46,189 +60,363 @@ struct EnhancedStatsCard: View {
         self.icon = icon
         self.color = color
         self.trend = trend
-        self.trendValue = trendValue
-        self.showGradient = showGradient
+        self.progress = progress
+        self.maxValue = maxValue
+        self.showAnimation = showAnimation
     }
     
     var body: some View {
-        VStack(spacing: 12) {
-            // Header with icon and trend
-            HStack {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(showGradient ? .white : color)
-                    .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
-                
-                Spacer()
-                
-                if let trend = trend, let trendValue = trendValue {
-                    HStack(spacing: 2) {
-                        Image(systemName: trend.icon)
-                            .font(.caption2)
-                        Text(trendValue)
-                            .font(.caption2)
-                            .fontWeight(.medium)
+        DSModernCard(style: .standard) {
+            VStack(spacing: 12) {
+                // Header with icon and trend
+                HStack {
+                    // Icon with background
+                    ZStack {
+                        Circle()
+                            .fill(color.opacity(0.15))
+                            .frame(width: 36, height: 36)
+                        
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(color)
                     }
-                    .foregroundColor(showGradient ? .white.opacity(0.9) : trend.color)
+                    
+                    Spacer()
+                    
+                    // Trend indicator
+                    if let trend = trend {
+                        HStack(spacing: 4) {
+                            Image(systemName: trend.icon)
+                                .font(.system(size: 10, weight: .medium))
+                            
+                            if let text = trend.text {
+                                Text(text)
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                        }
+                        .foregroundColor(trend.color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(trend.color.opacity(0.1))
+                        .clipShape(Capsule())
+                    }
+                }
+                
+                // Main content
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Title
+                        Text(title)
+                            .font(DS.Font.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(DS.Color.secondary)
+                        
+                        // Value with animation
+                        Text(value)
+                            .font(DS.Font.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(DS.Color.primary)
+                            .scaleEffect(animateValue ? 1.1 : 1.0)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: animateValue)
+                        
+                        // Subtitle if provided
+                        if let subtitle = subtitle {
+                            Text(subtitle)
+                                .font(DS.Font.caption2)
+                                .foregroundColor(DS.Color.secondary)
+                        }
+                    }
+                    
+                    // Progress bar if provided
+                    if let progress = progress {
+                        VStack(alignment: .leading, spacing: 4) {
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    // Background
+                                    Rectangle()
+                                        .fill(color.opacity(0.1))
+                                        .frame(height: 4)
+                                        .clipShape(Capsule())
+                                    
+                                    // Progress
+                                    Rectangle()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [color, color.opacity(0.7)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .frame(
+                                            width: animateProgress ? geometry.size.width * progress : 0,
+                                            height: 4
+                                        )
+                                        .clipShape(Capsule())
+                                        .animation(.easeInOut(duration: 1.0), value: animateProgress)
+                                }
+                            }
+                            .frame(height: 4)
+                            
+                            // Progress text
+                            if let maxValue = maxValue {
+                                HStack {
+                                    Text("\(Int(progress * maxValue))/\(Int(maxValue))")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(DS.Color.secondary)
+                                    
+                                    Spacer()
+                                    
+                                    Text("\(Int(progress * 100))%")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(color)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            
-            // Main value
-            VStack(alignment: .leading, spacing: 4) {
-                Text(value)
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .foregroundColor(showGradient ? .white : .primary)
-                    .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
-                
-                if let subtitle = subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(showGradient ? .white.opacity(0.8) : .secondary)
-                }
-                
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(showGradient ? .white.opacity(0.9) : .secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
-        .frame(maxWidth: .infinity, minHeight: 100)
-        .background(
-            Group {
-                if showGradient {
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            color,
-                            color.opacity(0.8)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                } else {
-                    Color(.secondarySystemBackground)
-                }
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(
-                    showGradient ? Color.white.opacity(0.2) : color.opacity(0.3),
-                    lineWidth: 1
-                )
-        )
-        .shadow(
-            color: showGradient ? color.opacity(0.3) : Color.black.opacity(0.1),
-            radius: showGradient ? 8 : 4,
-            x: 0,
-            y: showGradient ? 4 : 2
-        )
-    }
-}
-
-struct AnimatedStatsCard: View {
-    let title: String
-    let value: String
-    let subtitle: String?
-    let icon: String
-    let color: Color
-    let animationDelay: Double
-    
-    @State private var isVisible = false
-    @State private var scale = 0.8
-    @State private var opacity = 0.0
-    
-    var body: some View {
-        EnhancedStatsCard(
-            title: title,
-            value: value,
-            subtitle: subtitle,
-            icon: icon,
-            color: color,
-            showGradient: true
-        )
-        .scaleEffect(scale)
-        .opacity(opacity)
         .onAppear {
-            withAnimation(
-                .spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0)
-                .delay(animationDelay)
-            ) {
-                scale = 1.0
-                opacity = 1.0
-                isVisible = true
+            if showAnimation {
+                withAnimation(.easeInOut(duration: 0.6).delay(0.1)) {
+                    animateValue = true
+                }
+                withAnimation(.easeInOut(duration: 0.8).delay(0.3)) {
+                    animateProgress = true
+                }
+            } else {
+                animateProgress = true
+                animateValue = true
             }
         }
     }
 }
 
-struct InteractiveStatsCard: View {
+/// Compact stats card for grid layouts
+struct CompactStatsCard: View {
     let title: String
     let value: String
-    let subtitle: String?
     let icon: String
     let color: Color
-    let action: (() -> Void)?
+    let showRing: Bool
+    let ringProgress: Double
     
-    @State private var isPressed = false
+    init(
+        title: String,
+        value: String,
+        icon: String,
+        color: Color,
+        showRing: Bool = false,
+        ringProgress: Double = 0.0
+    ) {
+        self.title = title
+        self.value = value
+        self.icon = icon
+        self.color = color
+        self.showRing = showRing
+        self.ringProgress = ringProgress
+    }
     
     var body: some View {
-        Button {
-            action?()
-        } label: {
-            EnhancedStatsCard(
-                title: title,
-                value: value,
-                subtitle: subtitle,
-                icon: icon,
-                color: color,
-                showGradient: true
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            withAnimation(.easeInOut(duration: 0.1)) {
-                isPressed = pressing
+        DSModernCard(style: .minimal) {
+            VStack(spacing: 8) {
+                // Icon with optional progress ring
+                ZStack {
+                    if showRing {
+                        DSProgressRing(
+                            progress: ringProgress,
+                            lineWidth: 4,
+                            size: 40,
+                            color: color
+                        )
+                    }
+                    
+                    Circle()
+                        .fill(color.opacity(showRing ? 0.0 : 0.15))
+                        .frame(width: showRing ? 32 : 40, height: showRing ? 32 : 40)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: showRing ? 14 : 16, weight: .medium))
+                        .foregroundColor(color)
+                }
+                
+                // Content
+                VStack(spacing: 2) {
+                    Text(value)
+                        .font(DS.Font.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(DS.Color.primary)
+                    
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(DS.Color.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
             }
-        }, perform: {})
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 90)
+        }
+    }
+}
+
+/// Large featured stats card
+struct FeaturedStatsCard: View {
+    let title: String
+    let primaryValue: String
+    let primaryLabel: String
+    let secondaryStats: [(String, String)]
+    let icon: String
+    let color: Color
+    let gradient: Bool
+    
+    init(
+        title: String,
+        primaryValue: String,
+        primaryLabel: String,
+        secondaryStats: [(String, String)] = [],
+        icon: String,
+        color: Color,
+        gradient: Bool = true
+    ) {
+        self.title = title
+        self.primaryValue = primaryValue
+        self.primaryLabel = primaryLabel
+        self.secondaryStats = secondaryStats
+        self.icon = icon
+        self.color = color
+        self.gradient = gradient
+    }
+    
+    var body: some View {
+        DSModernCard(style: gradient ? .gradient : .prominent) {
+            VStack(spacing: 16) {
+                // Header
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(DS.Font.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(DS.Color.secondary)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: icon)
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(color)
+                            
+                            Text(primaryLabel)
+                                .font(DS.Font.caption)
+                                .foregroundColor(DS.Color.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                
+                // Primary value
+                HStack {
+                    DSAnimatedCounter(value: Int(primaryValue) ?? 0)
+                        .foregroundColor(gradient ? color : DS.Color.primary)
+                    
+                    Spacer()
+                }
+                
+                // Secondary stats
+                if !secondaryStats.isEmpty {
+                    Divider()
+                        .background(color.opacity(0.2))
+                    
+                    HStack {
+                        ForEach(Array(secondaryStats.enumerated()), id: \.offset) { index, stat in
+                            VStack(spacing: 4) {
+                                Text(stat.0)
+                                    .font(DS.Font.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(DS.Color.primary)
+                                
+                                Text(stat.1)
+                                    .font(DS.Font.caption2)
+                                    .foregroundColor(DS.Color.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            
+                            if index < secondaryStats.count - 1 {
+                                Divider()
+                                    .background(color.opacity(0.1))
+                                    .frame(height: 30)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 #Preview {
-    VStack(spacing: 16) {
-        EnhancedStatsCard(
-            title: "ELO Rating",
-            value: "1,847",
-            subtitle: "Advanced",
-            icon: "star.fill",
-            color: .blue,
-            trend: .up,
-            trendValue: "+23",
-            showGradient: true
-        )
-        
-        AnimatedStatsCard(
-            title: "Win Rate",
-            value: "78%",
-            subtitle: "Last 30 days",
-            icon: "chart.line.uptrend.xyaxis",
-            color: .green,
-            animationDelay: 0.2
-        )
-        
-        InteractiveStatsCard(
-            title: "Matches",
-            value: "142",
-            subtitle: "This season",
-            icon: "gamecontroller.fill",
-            color: .purple
-        ) {
-            print("Stats card tapped!")
+    ScrollView {
+        VStack(spacing: 16) {
+            // Enhanced stats cards
+            HStack {
+                EnhancedStatsCard(
+                    title: "Current ELO",
+                    value: "1,247",
+                    icon: "chart.line.uptrend.xyaxis",
+                    color: .blue,
+                    trend: .up("+52")
+                )
+                
+                EnhancedStatsCard(
+                    title: "Win Rate",
+                    value: "73%",
+                    subtitle: "Last 30 days",
+                    icon: "trophy.fill",
+                    color: .green,
+                    progress: 0.73,
+                    maxValue: 100
+                )
+            }
+            
+            // Compact stats grid
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                CompactStatsCard(
+                    title: "Matches",
+                    value: "42",
+                    icon: "gamecontroller.fill",
+                    color: .purple
+                )
+                
+                CompactStatsCard(
+                    title: "Level",
+                    value: "15",
+                    icon: "star.fill",
+                    color: .orange,
+                    showRing: true,
+                    ringProgress: 0.6
+                )
+                
+                CompactStatsCard(
+                    title: "Streak",
+                    value: "8",
+                    icon: "flame.fill",
+                    color: .red
+                )
+            }
+            
+            // Featured card
+            FeaturedStatsCard(
+                title: "This Month's Performance",
+                primaryValue: "1247",
+                primaryLabel: "Current ELO Rating",
+                secondaryStats: [
+                    ("12", "Wins"),
+                    ("4", "Losses"),
+                    ("75%", "Win Rate")
+                ],
+                icon: "chart.bar.fill",
+                color: .blue
+            )
         }
+        .padding()
     }
-    .padding()
 } 

@@ -1,7 +1,50 @@
 import Foundation
-import Observation
 import SwiftData
 import SwiftUI
+
+// MARK: - Supporting Types
+struct MMQueueEntry {
+    let user: User
+    let joinTime: Date
+    let preferredMatchType: MatchType
+    let eloRange: ClosedRange<Int>
+    
+    var waitTime: TimeInterval {
+        Date().timeIntervalSince(joinTime)
+    }
+}
+
+struct MMPotentialMatch {
+    let players: [MMQueueEntry]
+    let matchType: MatchType
+    let compatibility: Double
+}
+
+struct MMMatchProposal: Identifiable {
+    let id: UUID
+    let potentialMatch: MMPotentialMatch
+    let proposedAt: Date
+    let expiresAt: Date
+    var responses: [String: MMMatchResponse]
+    
+    var isExpired: Bool {
+        Date() > expiresAt
+    }
+    
+    var allPlayersResponded: Bool {
+        responses.count == potentialMatch.players.count
+    }
+    
+    var allAccepted: Bool {
+        allPlayersResponded && responses.values.allSatisfy { $0 == .accepted }
+    }
+}
+
+enum MMMatchResponse {
+    case accepted
+    case declined
+    case noResponse
+}
 
 @MainActor
 @Observable
@@ -21,7 +64,7 @@ final class MatchmakingService {
     var estimatedWaitTime: TimeInterval = 0
     
     // Matchmaking state
-    var matchProposal: MatchProposal?
+    var matchProposal: MMMatchProposal?
     var isMatchmaking: Bool = false
     
     init(modelContext: ModelContext) {
@@ -45,7 +88,7 @@ final class MatchmakingService {
             activeQueues[matchType] = MatchQueue(type: matchType)
         }
         
-        let queueEntry = QueueEntry(
+        let queueEntry = MMQueueEntry(
             user: user,
             joinTime: Date(),
             preferredMatchType: matchType,
@@ -100,8 +143,8 @@ final class MatchmakingService {
         isMatchmaking = false
     }
     
-    private func findPotentialMatches(in queue: MatchQueue, for matchType: MatchType) -> [PotentialMatch] {
-        var potentialMatches: [PotentialMatch] = []
+    private func findPotentialMatches(in queue: MatchQueue, for matchType: MatchType) -> [MMPotentialMatch] {
+        var potentialMatches: [MMPotentialMatch] = []
         let entries = queue.entries
         
         switch matchType {
@@ -109,7 +152,7 @@ final class MatchmakingService {
             // Find 1v1 matches
             for i in 0..<entries.count {
                 for j in (i+1)..<entries.count {
-                    let match = PotentialMatch(
+                    let match = MMPotentialMatch(
                         players: [entries[i], entries[j]],
                         matchType: matchType,
                         compatibility: calculateCompatibility(entries[i], entries[j])
@@ -123,7 +166,7 @@ final class MatchmakingService {
             if entries.count >= 4 {
                 // Simple implementation: take first 4 players
                 // In reality, you'd want more sophisticated team balancing
-                let match = PotentialMatch(
+                let match = MMPotentialMatch(
                     players: Array(entries.prefix(4)),
                     matchType: matchType,
                     compatibility: calculateTeamCompatibility(Array(entries.prefix(4)))
@@ -135,7 +178,7 @@ final class MatchmakingService {
             // More lenient matching for practice
             for i in 0..<entries.count {
                 for j in (i+1)..<entries.count {
-                    let match = PotentialMatch(
+                    let match = MMPotentialMatch(
                         players: [entries[i], entries[j]],
                         matchType: matchType,
                         compatibility: calculatePracticeCompatibility(entries[i], entries[j])
@@ -155,8 +198,8 @@ final class MatchmakingService {
         return potentialMatches.sorted { $0.compatibility > $1.compatibility }
     }
     
-    private func proposeMatch(_ potentialMatch: PotentialMatch) async {
-        let proposal = MatchProposal(
+    private func proposeMatch(_ potentialMatch: MMPotentialMatch) async {
+        let proposal = MMMatchProposal(
             id: UUID(),
             potentialMatch: potentialMatch,
             proposedAt: Date(),
@@ -191,7 +234,7 @@ final class MatchmakingService {
         }
     }
     
-    private func createMatchFromProposal(_ proposal: MatchProposal) async {
+    private func createMatchFromProposal(_ proposal: MMMatchProposal) async {
         let players = proposal.potentialMatch.players.map { $0.user }
         
         // Remove players from queue
@@ -224,7 +267,7 @@ final class MatchmakingService {
     
     // MARK: - Compatibility Calculations
     
-    private func calculateCompatibility(_ player1: QueueEntry, _ player2: QueueEntry) -> Double {
+    private func calculateCompatibility(_ player1: MMQueueEntry, _ player2: MMQueueEntry) -> Double {
         let eloWeight = 0.6
         let waitTimeWeight = 0.3
         let regionWeight = 0.1
@@ -245,7 +288,7 @@ final class MatchmakingService {
                (regionCompatibility * regionWeight)
     }
     
-    private func calculateTeamCompatibility(_ players: [QueueEntry]) -> Double {
+    private func calculateTeamCompatibility(_ players: [MMQueueEntry]) -> Double {
         guard players.count == 4 else { return 0 }
         
         // Calculate team balance
@@ -256,7 +299,7 @@ final class MatchmakingService {
         return max(0, teamBalance)
     }
     
-    private func calculatePracticeCompatibility(_ player1: QueueEntry, _ player2: QueueEntry) -> Double {
+    private func calculatePracticeCompatibility(_ player1: MMQueueEntry, _ player2: MMQueueEntry) -> Double {
         // More lenient for practice matches
         return calculateCompatibility(player1, player2) * 0.7 + 0.3
     }
@@ -321,7 +364,7 @@ final class MatchmakingService {
     }
     
     // MARK: - Public Response Handling
-    func respondToMatchProposal(response: MatchResponse, for user: User) async {
+    func respondToMatchProposal(response: MMMatchResponse, for user: User) async {
         guard var proposal = matchProposal else { return }
         // Record response
         proposal.responses[user.id.uuidString] = response
@@ -349,13 +392,13 @@ final class MatchmakingService {
 
 class MatchQueue: ObservableObject {
     let type: MatchType
-    @Published var entries: [QueueEntry] = []
+    @Published var entries: [MMQueueEntry] = []
     
     init(type: MatchType) {
         self.type = type
     }
     
-    func addUser(_ entry: QueueEntry) {
+    func addUser(_ entry: MMQueueEntry) {
         entries.append(entry)
         entries.sort { $0.joinTime < $1.joinTime }
     }
@@ -370,49 +413,6 @@ class MatchQueue: ObservableObject {
             entries.removeFirst()
         }
     }
-}
-
-struct QueueEntry {
-    let user: User
-    let joinTime: Date
-    let preferredMatchType: MatchType
-    let eloRange: ClosedRange<Int>
-    
-    var waitTime: TimeInterval {
-        Date().timeIntervalSince(joinTime)
-    }
-}
-
-struct PotentialMatch {
-    let players: [QueueEntry]
-    let matchType: MatchType
-    let compatibility: Double
-}
-
-struct MatchProposal {
-    let id: UUID
-    let potentialMatch: PotentialMatch
-    let proposedAt: Date
-    let expiresAt: Date
-    var responses: [String: MatchResponse]
-    
-    var isExpired: Bool {
-        Date() > expiresAt
-    }
-    
-    var allPlayersResponded: Bool {
-        responses.count == potentialMatch.players.count
-    }
-    
-    var allAccepted: Bool {
-        allPlayersResponded && responses.values.allSatisfy { $0 == .accepted }
-    }
-}
-
-enum MatchResponse {
-    case accepted
-    case declined
-    case noResponse
 }
 
 // MARK: - Extensions

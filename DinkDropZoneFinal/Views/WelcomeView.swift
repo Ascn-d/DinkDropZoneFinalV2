@@ -2,7 +2,7 @@ import SwiftUI
 import FirebaseAuth
 
 struct WelcomeView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var email = ""
     @State private var password = ""
     @State private var showingError = false
