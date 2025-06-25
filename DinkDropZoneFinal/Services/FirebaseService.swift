@@ -325,6 +325,362 @@ final class FirebaseService {
     func updateMatch(_ match: LeagueMatch) async throws {}
     func getMatches(for league: PickleLeague) async throws -> [LeagueMatch] { [] }
 
+    // MARK: - MATCH MANAGEMENT
+    
+    /// Creates a new match in Firestore
+    func createMatch(_ match: GameMatch, players: [User]) async throws -> String {
+        let matchId = UUID().uuidString
+        
+        let matchData: [String: Any] = [
+            "id": matchId,
+            "players": players.map { ["id": $0.id.uuidString, "displayName": $0.displayName, "elo": $0.elo] },
+            "status": "pending",
+            "createdAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp(),
+            "type": "singles", // Default type since GameMatch doesn't have type
+            "location": "", // Default location since GameMatch doesn't have location  
+            "scheduledFor": Date() // Default time since GameMatch doesn't have scheduledTime
+        ]
+        
+        try await perform {
+            try await db.collection("matches").document(matchId).setData(matchData)
+        }
+        
+        return matchId
+    }
+    
+    /// Updates match with result and statistics
+    func completeMatch(matchId: String, result: MatchResult, players: [User]) async throws {
+        let batch = db.batch()
+        
+        // Update match document
+        let matchRef = db.collection("matches").document(matchId)
+        let matchUpdate: [String: Any] = [
+            "status": "completed",
+            "completedAt": FieldValue.serverTimestamp(),
+            "result": [
+                "winner": "", // MatchResult doesn't have winnerId
+                "score": "11-0", // MatchResult doesn't have score
+                "pointsScored": result.pointsScored,
+                "pointsConceded": result.pointsConceded,
+                "eloChange": result.eloChange,
+                "duration": 0 // MatchResult doesn't have duration
+            ]
+        ]
+        batch.updateData(matchUpdate, forDocument: matchRef)
+        
+        // Update player statistics
+        for player in players {
+            let playerRef = db.collection("users").document(player.id.uuidString)
+            let playerUpdate: [String: Any] = [
+                "totalMatches": player.totalMatches,
+                "wins": player.wins,
+                "losses": player.losses,
+                "winStreak": player.winStreak,
+                "longestWinStreak": player.longestWinStreak,
+                "totalPointsScored": player.totalPointsScored,
+                "totalPointsConceded": player.totalPointsConceded,
+                "elo": player.elo,
+                "xp": player.xp,
+                "lastActive": FieldValue.serverTimestamp()
+            ]
+            batch.updateData(playerUpdate, forDocument: playerRef)
+        }
+        
+        // Create match history entry
+        let historyId = UUID().uuidString
+        let historyRef = db.collection("match_history").document(historyId)
+        let historyData: [String: Any] = [
+            "matchId": matchId,
+            "playerId": players.first?.id.uuidString ?? "",
+            "opponentId": players.last?.id.uuidString ?? "",
+            "result": result.isWin ? "win" : "loss",
+            "score": "11-0", // MatchResult doesn't have score
+            "eloChange": result.eloChange,
+            "date": FieldValue.serverTimestamp()
+        ]
+        batch.setData(historyData, forDocument: historyRef)
+        
+        try await batch.commit()
+    }
+    
+    /// Gets recent matches for a user
+    func getRecentMatches(for userId: String, limit: Int = 10) async throws -> [GameMatch] {
+        let snapshot = try await perform {
+            try await db.collection("match_history")
+                .whereField("playerId", isEqualTo: userId)
+                .order(by: "date", descending: true)
+                .limit(to: limit)
+                .getDocuments()
+        }
+        
+        var matches: [GameMatch] = []
+        for doc in snapshot.documents {
+            if let match = try? decodeGameMatch(from: doc.data(), id: doc.documentID) {
+                matches.append(match)
+            }
+        }
+        return matches
+    }
+    
+    // MARK: - ACHIEVEMENT MANAGEMENT
+    
+    /// Saves user achievements to Firestore
+    func saveAchievements(_ achievements: [Trophy], for userId: String) async throws {
+        let achievementData = achievements.map { trophy -> [String: Any] in
+            var data: [String: Any] = [
+                "id": trophy.id.uuidString,
+                "title": trophy.title,
+                "category": trophy.category.rawValue,
+                "tier": trophy.tier.rawValue,
+                "isUnlocked": trophy.isUnlocked,
+                "progress": trophy.progress
+            ]
+            
+            if let unlockedAt = trophy.unlockedAt {
+                data["unlockedAt"] = Timestamp(date: unlockedAt)
+            }
+            
+            return data
+        }
+        
+        try await perform {
+            try await db.collection("users").document(userId).updateData([
+                "achievements": achievementData,
+                "lastUpdated": FieldValue.serverTimestamp()
+            ])
+        }
+    }
+    
+    /// Loads user achievements from Firestore
+    func loadAchievements(for userId: String) async throws -> [Trophy] {
+        let snapshot = try await perform {
+            try await db.collection("users").document(userId).getDocument()
+        }
+        
+        guard let data = snapshot.data(),
+              let achievementsData = data["achievements"] as? [[String: Any]] else {
+            return AchievementDefinitions.allAchievements // Return default achievements
+        }
+        
+        var achievements: [Trophy] = []
+        for achievementDict in achievementsData {
+            if let achievement = try? decodeTrophy(from: achievementDict) {
+                achievements.append(achievement)
+            }
+        }
+        
+        return achievements.isEmpty ? AchievementDefinitions.allAchievements : achievements
+    }
+    
+    // MARK: - STATISTICS MANAGEMENT
+    
+    /// Saves detailed user statistics
+    func saveUserStatistics(_ stats: DetailedUserStats, for userId: String) async throws {
+        let statsData: [String: Any] = [
+            "totalMatches": stats.totalMatches,
+            "wins": stats.wins,
+            "losses": stats.losses,
+            "winRate": stats.winRate,
+            "elo": stats.elo,
+            "winStreak": stats.winStreak,
+            "longestWinStreak": stats.longestWinStreak,
+            "averagePointsScored": stats.averagePointsScored,
+            "averagePointsConceded": stats.averagePointsConceded,
+            "pointsDifferential": stats.pointsDifferential,
+            "lastUpdated": FieldValue.serverTimestamp()
+        ]
+        
+        try await perform {
+            try await db.collection("user_statistics").document(userId).setData(statsData, merge: true)
+        }
+    }
+    
+    /// Loads detailed user statistics
+    func loadUserStatistics(for userId: String) async throws -> DetailedUserStats? {
+        let snapshot = try await perform {
+            try await db.collection("user_statistics").document(userId).getDocument()
+        }
+        
+        guard let data = snapshot.data() else { return nil }
+        return try decodeUserStatistics(from: data)
+    }
+    
+    // MARK: - SOCIAL FEATURES
+    
+    /// Sends a friend request
+    func sendFriendRequest(from senderId: String, to recipientId: String) async throws {
+        let requestId = UUID().uuidString
+        let requestData: [String: Any] = [
+            "id": requestId,
+            "senderId": senderId,
+            "recipientId": recipientId,
+            "status": "pending",
+            "sentAt": FieldValue.serverTimestamp()
+        ]
+        
+        try await perform {
+            try await db.collection("friend_requests").document(requestId).setData(requestData)
+        }
+        
+        // Add to recipient's notifications
+        try await addNotification(
+            userId: recipientId,
+            type: "friend_request",
+            title: "New Friend Request",
+            message: "Someone wants to be your friend!",
+            data: ["requestId": requestId, "senderId": senderId]
+        )
+    }
+    
+    /// Responds to a friend request
+    func respondToFriendRequest(requestId: String, accept: Bool) async throws {
+        let requestRef = db.collection("friend_requests").document(requestId)
+        let requestSnapshot = try await requestRef.getDocument()
+        
+        guard let requestData = requestSnapshot.data(),
+              let senderId = requestData["senderId"] as? String,
+              let recipientId = requestData["recipientId"] as? String else {
+            throw FirebaseError.decoding
+        }
+        
+        let batch = db.batch()
+        
+        // Update request status
+        batch.updateData(["status": accept ? "accepted" : "declined"], forDocument: requestRef)
+        
+        if accept {
+            // Add to both users' friends lists
+            let friendshipId = UUID().uuidString
+            let friendshipData: [String: Any] = [
+                "user1": senderId,
+                "user2": recipientId,
+                "createdAt": FieldValue.serverTimestamp()
+            ]
+            
+            let friendshipRef = db.collection("friendships").document(friendshipId)
+            batch.setData(friendshipData, forDocument: friendshipRef)
+        }
+        
+        try await batch.commit()
+    }
+    
+    /// Gets user's friends
+    func getFriends(for userId: String) async throws -> [User] {
+        let snapshot1 = try await perform {
+            try await db.collection("friendships")
+                .whereField("user1", isEqualTo: userId)
+                .getDocuments()
+        }
+        
+        let snapshot2 = try await perform {
+            try await db.collection("friendships")
+                .whereField("user2", isEqualTo: userId)
+                .getDocuments()
+        }
+        
+        var friendIds: Set<String> = []
+        
+        for doc in snapshot1.documents {
+            if let user2 = doc.data()["user2"] as? String {
+                friendIds.insert(user2)
+            }
+        }
+        
+        for doc in snapshot2.documents {
+            if let user1 = doc.data()["user1"] as? String {
+                friendIds.insert(user1)
+            }
+        }
+        
+        var friends: [User] = []
+        for friendId in friendIds {
+            if let friend = try? await getUser(id: friendId) {
+                friends.append(friend)
+            }
+        }
+        
+        return friends
+    }
+    
+    // MARK: - NOTIFICATIONS
+    
+    /// Adds a notification for a user
+    func addNotification(userId: String, type: String, title: String, message: String, data: [String: Any] = [:]) async throws {
+        let notificationId = UUID().uuidString
+        let notificationData: [String: Any] = [
+            "id": notificationId,
+            "userId": userId,
+            "type": type,
+            "title": title,
+            "message": message,
+            "data": data,
+            "isRead": false,
+            "createdAt": FieldValue.serverTimestamp()
+        ]
+        
+        try await perform {
+            try await db.collection("notifications").document(notificationId).setData(notificationData)
+        }
+    }
+    
+    /// Gets unread notifications for a user
+    func getUnreadNotifications(for userId: String) async throws -> [AppNotification] {
+        let snapshot = try await perform {
+            try await db.collection("notifications")
+                .whereField("userId", isEqualTo: userId)
+                .whereField("isRead", isEqualTo: false)
+                .order(by: "createdAt", descending: true)
+                .getDocuments()
+        }
+        
+        var notifications: [AppNotification] = []
+        for doc in snapshot.documents {
+            if let notification = try? decodeAppNotification(from: doc.data(), id: doc.documentID) {
+                notifications.append(notification)
+            }
+        }
+        
+        return notifications
+    }
+    
+    /// Marks notification as read
+    func markNotificationAsRead(notificationId: String) async throws {
+        try await perform {
+            try await db.collection("notifications").document(notificationId).updateData([
+                "isRead": true,
+                "readAt": FieldValue.serverTimestamp()
+            ])
+        }
+    }
+    
+    // MARK: - LEADERBOARD
+    
+    /// Gets global leaderboard
+    func getGlobalLeaderboard(limit: Int = 50) async throws -> [User] {
+        let snapshot = try await perform {
+            try await db.collection("users")
+                .order(by: "elo", descending: true)
+                .limit(to: limit)
+                .getDocuments()
+        }
+        
+        var users: [User] = []
+        for doc in snapshot.documents {
+            if let user = try? decodeUser(from: doc.data(), id: doc.documentID) {
+                users.append(user)
+            }
+        }
+        
+        return users
+    }
+    
+    /// Gets local leaderboard (within radius)
+    func getLocalLeaderboard(center: CLLocationCoordinate2D, radiusKm: Double, limit: Int = 20) async throws -> [User] {
+        let nearbyPlayers = try await fetchNearbyPlayers(center: center, radiusKm: radiusKm)
+        return Array(nearbyPlayers.sorted { $0.elo > $1.elo }.prefix(limit))
+    }
+
     // MARK: - Helper Encoding/Decoding
     private func encodeUser(_ user: User) -> [String: Any] {
         var dict: [String: Any] = [
@@ -443,5 +799,115 @@ final class FirebaseService {
             return FirebaseError.missingFirestore
         }
         return error
+    }
+    
+    // MARK: - Additional Helper Methods
+    
+    private func decodeGameMatch(from dict: [String: Any], id: String) throws -> GameMatch {
+        // Convert Firebase match data to GameMatch format
+        let opponentName = dict["opponentName"] as? String ?? "Unknown Opponent"
+        let result = dict["result"] as? String ?? "win"
+        let score = dict["score"] as? String ?? "11-0"
+        let eloChange = dict["eloChange"] as? Int ?? 0
+        let date = (dict["date"] as? Timestamp)?.dateValue() ?? Date()
+        
+        return GameMatch(
+            opponentName: opponentName,
+            result: result,
+            score: score,
+            eloChange: "\(eloChange)", // Convert Int to String
+            date: date
+        )
+    }
+    
+    private func decodeTrophy(from dict: [String: Any]) throws -> Trophy {
+        guard let idString = dict["id"] as? String,
+              let id = UUID(uuidString: idString),
+              let title = dict["title"] as? String,
+              let categoryString = dict["category"] as? String,
+              let tierString = dict["tier"] as? String else {
+            throw FirebaseError.decoding
+        }
+        
+        let category = AchievementCategory(rawValue: categoryString) ?? .gameplay
+        let tier = AchievementTier(rawValue: tierString) ?? .bronze
+        let isUnlocked = dict["isUnlocked"] as? Bool ?? false
+        let progress = dict["progress"] as? [String: Int] ?? [:]
+        let unlockedAt = (dict["unlockedAt"] as? Timestamp)?.dateValue()
+        
+        var trophy = Trophy(
+            id: id,
+            title: title,
+            description: "", // Would need to match with definitions
+            category: category,
+            tier: tier,
+            icon: "trophy.fill",
+            conditions: []
+        )
+        
+        trophy.isUnlocked = isUnlocked
+        trophy.progress = progress
+        trophy.unlockedAt = unlockedAt
+        
+        return trophy
+    }
+    
+    private func encodeStats<T: Codable>(_ stats: T) -> [String: Any] {
+        do {
+            let data = try JSONEncoder().encode(stats)
+            let json = try JSONSerialization.jsonObject(with: data, options: [])
+            return json as? [String: Any] ?? [:]
+        } catch {
+            return [:]
+        }
+    }
+    
+    private func decodeUserStatistics(from dict: [String: Any]) throws -> DetailedUserStats {
+        let totalMatches = dict["totalMatches"] as? Int ?? 0
+        let wins = dict["wins"] as? Int ?? 0
+        let losses = dict["losses"] as? Int ?? 0
+        let winRate = dict["winRate"] as? Double ?? 0.0
+        let elo = dict["elo"] as? Int ?? 1000
+        let winStreak = dict["winStreak"] as? Int ?? 0
+        let longestWinStreak = dict["longestWinStreak"] as? Int ?? 0
+        let averagePointsScored = dict["averagePointsScored"] as? Double ?? 0.0
+        let averagePointsConceded = dict["averagePointsConceded"] as? Double ?? 0.0
+        let pointsDifferential = dict["pointsDifferential"] as? Int ?? 0
+        
+        return DetailedUserStats(
+            totalMatches: totalMatches,
+            wins: wins,
+            losses: losses,
+            winRate: winRate,
+            elo: elo,
+            winStreak: winStreak,
+            longestWinStreak: longestWinStreak,
+            averagePointsScored: averagePointsScored,
+            averagePointsConceded: averagePointsConceded,
+            pointsDifferential: pointsDifferential
+        )
+    }
+    
+    private func decodeAppNotification(from dict: [String: Any], id: String) throws -> AppNotification {
+        guard let type = dict["type"] as? String,
+              let title = dict["title"] as? String,
+              let message = dict["message"] as? String else {
+            throw FirebaseError.decoding
+        }
+        
+        let notificationType: AppNotification.NotificationType
+        switch type {
+        case "friend_request": notificationType = .achievement // Using available type
+        case "achievement": notificationType = .achievement
+        case "match": notificationType = .achievement // Using available type
+        default: notificationType = .achievement
+        }
+        
+        return AppNotification(
+            type: notificationType,
+            title: title,
+            message: message,
+            data: dict["data"] as? [String: Any] ?? [:]
+        )
     }
 } 

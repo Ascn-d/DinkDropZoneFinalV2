@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import FirebaseAuth
 import Combine
 
 // MARK: - Advanced Achievement System
@@ -611,17 +612,53 @@ class AdvancedAchievementTracker: ObservableObject {
     private func loadAchievements() {
         achievements = AchievementDefinitions.allAchievements
         
-        // Load progress from UserDefaults (in a real app, this would be from a database)
-        if let data = UserDefaults.standard.data(forKey: "achievements"),
-           let savedAchievements = try? JSONDecoder().decode([Trophy].self, from: data) {
-            achievements = savedAchievements
+        // Load achievements from Firebase if user is authenticated
+        Task {
+            await loadAchievementsFromFirebase()
+        }
+    }
+    
+    @MainActor
+    func loadAchievementsFromFirebase() async {
+        guard let currentUser = Auth.auth().currentUser else {
+            // Fallback to UserDefaults for offline/guest mode
+            if let data = UserDefaults.standard.data(forKey: "achievements"),
+               let savedAchievements = try? JSONDecoder().decode([Trophy].self, from: data) {
+                achievements = savedAchievements
+                unlockedAchievements = Set(achievements.filter { $0.isUnlocked }.map { $0.id })
+            }
+            return
+        }
+        
+        do {
+            let firebaseAchievements = try await FirebaseService.shared.loadAchievements(for: currentUser.uid)
+            achievements = firebaseAchievements
             unlockedAchievements = Set(achievements.filter { $0.isUnlocked }.map { $0.id })
+        } catch {
+            print("Failed to load achievements from Firebase: \(error)")
+            // Keep default achievements on error
         }
     }
     
     func saveAchievements() {
+        // Save to UserDefaults for offline access
         if let data = try? JSONEncoder().encode(achievements) {
             UserDefaults.standard.set(data, forKey: "achievements")
+        }
+        
+        // Save to Firebase if user is authenticated
+        Task {
+            await saveAchievementsToFirebase()
+        }
+    }
+    
+    private func saveAchievementsToFirebase() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        do {
+            try await FirebaseService.shared.saveAchievements(achievements, for: currentUser.uid)
+        } catch {
+            print("Failed to save achievements to Firebase: \(error)")
         }
     }
     

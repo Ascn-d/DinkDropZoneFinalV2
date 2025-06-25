@@ -377,28 +377,124 @@ final class AppState: ObservableObject {
             eloRating: user.elo
         )
         
-        // Update the user
+        // Save to Firebase
+        do {
+            try await FirebaseService.shared.updateUser(user)
+            
+            // Save statistics if available
+            if let stats = userStats {
+                try await FirebaseService.shared.saveUserStatistics(stats, for: user.id.uuidString)
+            }
+        } catch {
+            print("Failed to save match completion to Firebase: \(error)")
+        }
+        
+        // Update the user locally
         updateUser(user)
         
         // Fetch recent matches
-        await fetchRecentMatches()
+        await loadRecentMatches()
     }
     
     // MARK: - Data Loading
     
-    func loadInitialData() async {
-        await refreshUserStats()
-        await fetchRecentMatches()
+    private func loadInitialData() async {
+        await loadRecentMatches()
+        await loadUserStatistics()
+        await loadNotifications()
+        await loadFriends()
+        await loadNearbyPlayers()
+        await loadLeaderboard()
+        await loadAchievements()
+    }
+    
+    func loadRecentMatches() async {
+        guard let userId = currentUser?.id.uuidString else { return }
         
+        do {
+            let matches = try await FirebaseService.shared.getRecentMatches(for: userId, limit: 10)
+            await MainActor.run {
+                self.recentMatches = matches
+            }
+        } catch {
+            print("Failed to load recent matches: \(error)")
+        }
+    }
+    
+    func loadUserStatistics() async {
+        guard let userId = currentUser?.id.uuidString else { return }
+        
+        do {
+            let stats = try await FirebaseService.shared.loadUserStatistics(for: userId)
+            await MainActor.run {
+                self.userStats = stats
+            }
+        } catch {
+            print("Failed to load user statistics: \(error)")
+        }
+    }
+    
+    func loadNotifications() async {
+        guard let userId = currentUser?.id.uuidString else { return }
+        
+        do {
+            let notifications = try await FirebaseService.shared.getUnreadNotifications(for: userId)
+            await MainActor.run {
+                self.unreadNotifications = notifications
+            }
+        } catch {
+            print("Failed to load notifications: \(error)")
+        }
+    }
+    
+    func loadFriends() async {
+        guard let userId = currentUser?.id.uuidString else { return }
+        
+        do {
+            let _ = try await FirebaseService.shared.getFriends(for: userId)
+            await MainActor.run {
+                // Store friends in a way that can be accessed by the UI
+                // For now, we'll keep the existing structure
+            }
+        } catch {
+            print("Failed to load friends: \(error)")
+        }
+    }
+    
+    func loadNearbyPlayers() async {
         // If location permission is granted, start location services
         if let locationService = locationService, locationService.authorizationStatus == .authorizedWhenInUse || locationService.authorizationStatus == .authorizedAlways {
             locationService.request()
             
             // If we have a location, fetch nearby players
             if let location = locationService.currentLocation {
-                await nearbyPlayersService?.fetchNearby(center: location)
+                do {
+                    let nearby = try await FirebaseService.shared.fetchNearbyPlayers(center: location.coordinate, radiusKm: 10.0)
+                    await MainActor.run {
+                        self.nearbyPlayers = nearby
+                    }
+                } catch {
+                    print("Failed to load nearby players: \(error)")
+                }
             }
         }
+    }
+    
+    func loadLeaderboard() async {
+        do {
+            let leaderboard = try await FirebaseService.shared.getGlobalLeaderboard(limit: 50)
+            await MainActor.run {
+                // Store leaderboard data - could add a leaderboard property to AppState
+                print("Loaded \(leaderboard.count) players from leaderboard")
+            }
+        } catch {
+            print("Failed to load leaderboard: \(error)")
+        }
+    }
+    
+    func loadAchievements() async {
+        // Achievements are loaded by the AdvancedAchievementTracker
+        await achievementTracker?.loadAchievementsFromFirebase()
     }
     
     func refreshUserStats() async {
@@ -467,8 +563,6 @@ final class AppState: ObservableObject {
     private func setupNotificationObservers() {
         // Listen for notifications that might require UI updates
     }
-    
-
     
     func markNotificationAsRead(_ notification: AppNotification) {
         if let index = unreadNotifications.firstIndex(where: { $0.id == notification.id }) {
