@@ -237,6 +237,31 @@ final class FirebaseService {
                 uploadTask.observe(.failure) { snapshot in
                     if let error = snapshot.error {
                         print("FirebaseService: Upload task failed: \(error)")
+                        
+                        // Enhanced error logging for debugging
+                        if let storageError = error as? StorageError {
+                            print("FirebaseService: Upload failed: \(storageError)")
+                            switch storageError {
+                            case .objectNotFound:
+                                print("FirebaseService: Error details: Object \(imageRef.fullPath) does not exist.")
+                                print("💡 SOLUTION NEEDED: Firebase Storage is not enabled or bucket doesn't exist")
+                                print("   → Go to Firebase Console → Storage → Get Started")
+                            case .unauthorized:
+                                print("FirebaseService: Error details: Unauthorized access. Check Firebase Storage rules.")
+                                print("💡 SOLUTION NEEDED: Storage security rules are blocking the upload")
+                                print("   → Go to Firebase Console → Storage → Rules")
+                            case .quotaExceeded:
+                                print("FirebaseService: Error details: Storage quota exceeded.")
+                                print("💡 SOLUTION NEEDED: Storage quota exceeded")
+                                print("   → Check Firebase billing and upgrade plan if needed")
+                            default:
+                                print("FirebaseService: Error details: \(storageError.localizedDescription)")
+                            }
+                            print("FirebaseService: Error type: StorageError")
+                        } else {
+                            print("FirebaseService: Error type: \(type(of: error))")
+                            print("FirebaseService: Error description: \(error.localizedDescription)")
+                        }
                     }
                 }
             }

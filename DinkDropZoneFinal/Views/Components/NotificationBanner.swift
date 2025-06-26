@@ -47,9 +47,9 @@ struct NotificationBanner: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 4)
+            DSGlassMorphismCard {
+                EmptyView()
+            }
         )
         .offset(y: isVisible ? 0 : -100)
         .opacity(isVisible ? 1 : 0)

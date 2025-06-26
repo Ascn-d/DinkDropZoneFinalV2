@@ -10,57 +10,74 @@ struct QuickActionCard: View {
     @State private var isPressed = false
     
     var body: some View {
-        DSInteractiveCard(action: action) {
-            VStack(spacing: 12) {
-                // Icon with enhanced styling
+        DSPremiumInteractiveCard(action: action) {
+            VStack(spacing: 16) {
+                // Enhanced Icon with Glass Morphism Effect
                 ZStack {
-                    // Background circle with gradient
+                    // Outer glow effect
                     Circle()
-                        .fill(
+                        .fill(color.opacity(0.3))
+                        .frame(width: 70, height: 70)
+                        .blur(radius: 8)
+                    
+                    // Glass morphism background
+                    Circle()
+                        .fill(.ultraThinMaterial.opacity(0.8))
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [color.opacity(0.6), color.opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        )
+                    
+                    // Icon with premium styling
+                    Image(systemName: icon)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(
                             LinearGradient(
-                                colors: [color.opacity(0.2), color.opacity(0.1)],
+                                colors: [color, color.opacity(0.8)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 60, height: 60)
-                        .overlay(
-                            Circle()
-                                .stroke(color.opacity(0.3), lineWidth: 1)
-                        )
                     
-                    // Icon
-                    Image(systemName: icon)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(color)
-                    
-                    // Badge with improved styling
+                    // Premium animated badge
                     if let badge = badge, !badge.isEmpty {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(
-                                LinearGradient(
-                                    colors: [.red, .red.opacity(0.8)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                        DSPulsingDot(color: .red, size: 8)
+                            .overlay(
+                                Text(badge)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        LinearGradient(
+                                            colors: [.red, .red.opacity(0.8)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .clipShape(Capsule())
+                                    .shadow(color: .red.opacity(0.4), radius: 4, x: 0, y: 2)
                             )
-                            .clipShape(Capsule())
-                            .shadow(color: .red.opacity(0.3), radius: 2, x: 0, y: 1)
-                            .offset(x: 25, y: -25)
+                            .offset(x: 28, y: -28)
                     }
                 }
                 
-                // Text content with improved hierarchy
-                VStack(spacing: 4) {
-                    Text(title)
-                        .font(DS.Font.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(DS.Color.primary)
-                        .multilineTextAlignment(.center)
+                // Enhanced text content with gradient titles
+                VStack(spacing: 6) {
+                    DSGradientText(
+                        text: title,
+                        font: DS.Font.subheadline.weight(.semibold),
+                        gradient: DS.Color.primaryGradient
+                    )
+                    .multilineTextAlignment(.center)
                     
                     Text(subtitle)
                         .font(DS.Font.caption)
@@ -68,9 +85,15 @@ struct QuickActionCard: View {
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                 }
+                
+                // Subtle bottom accent line
+                Rectangle()
+                    .fill(color.opacity(0.3))
+                    .frame(width: 40, height: 2)
+                    .clipShape(Capsule())
             }
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 120)
+            .frame(minHeight: 140)
         }
     }
 }

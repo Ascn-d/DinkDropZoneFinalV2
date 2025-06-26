@@ -6,6 +6,7 @@ import UIKit
 
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var allMatches: [Match]
     @State private var isEditingProfile = false
     @State private var selectedItem: PhotosPickerItem? = nil
@@ -15,6 +16,7 @@ struct ProfileView: View {
     @State private var isUploadingImage = false
     @State private var uploadError: String? = nil
     @State private var showingUploadError = false
+    @State private var animateContent = false
     
     // Helper to get matches for current user
     private var userMatches: [Match] {
@@ -25,328 +27,361 @@ struct ProfileView: View {
     }
     
     var body: some View {
-        NavigationStack {
-            DSPageTemplate(
-                title: "Profile",
-                onRefresh: refreshUserData,
-                headerContent: {
-                    profileHeaderSection
-                }
-            ) {
-                // Level and XP Section
-                levelProgressSection
-                
-                // Quick Stats Section
-                DSSectionContainer(title: "Quick Stats") {
-                    if let user = appState.currentUser {
-                        quickStatsGrid(user: user)
-                    }
-                }
-                
-                // Daily Challenges Section
-                DSSectionContainer(title: "Daily Challenges") {
-                    dailyChallengesContent
-                }
-                
-                // Achievements Section
-                DSSectionContainer(
-                    title: "Achievements", 
-                    action: { showingAllAchievements = true }
-                ) {
-                    achievementsContent
-                }
-                
-                // Recent Activity Section
-                DSSectionContainer(
-                    title: "Recent Activity", 
-                    action: userMatches.isEmpty ? nil : { showingMatchHistory = true }
-                ) {
-                    recentActivityContent
-                }
-                
-                // Detailed Stats Section
-                DSSectionContainer(title: "Detailed Statistics") {
-                    detailedStatsContent
-                }
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        shareProfile()
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-
-                    Button {
-                        isEditingProfile = true
-                    } label: {
-                        Image(systemName: "pencil")
-                    }
-                }
-                
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Log Out") {
-                        appState.currentUser = nil
-                    }
-                    .foregroundColor(.red)
-                }
-            }
-            .sheet(isPresented: $isEditingProfile) {
-                if let user = appState.currentUser {
-                    ProfileEditView(user: user)
-                }
-            }
-            .sheet(isPresented: $showingMatchHistory) {
-                MatchHistoryView()
-            }
-            .sheet(isPresented: $showingAllAchievements) {
-                AchievementsView()
-            }
-            .alert("Upload Error", isPresented: $showingUploadError) {
-                Button("OK") { uploadError = nil }
-            } message: {
-                Text(uploadError ?? "Unknown error occurred")
-            }
-        }
-    }
-    
-    // MARK: - Profile Header Section
-    
-    private var profileHeaderSection: some View {
-        VStack(spacing: 16) {
-            if let user = appState.currentUser {
-                // Background gradient
-                ZStack {
-                    DS.Color.headerGradient
-                        .frame(height: 220)
+        GeometryReader { geometry in
+            let safeAreaTop = geometry.safeAreaInsets.top
+            let safeAreaBottom = geometry.safeAreaInsets.bottom
+            
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // Profile Header - Properly positioned to avoid sidebar and navigation bar
+                    profileHeaderWithSafeArea(safeAreaTop: safeAreaTop)
                     
-                    VStack(spacing: 16) {
-                        // Profile Image with Level Border
-                        ZStack {
-                            Circle()
-                                .stroke(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [Color.yellow, Color.orange]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 4
-                                )
-                                .frame(width: 120, height: 120)
+                    // Main content with proper spacing and sidebar consideration
+                    VStack(spacing: DS.Layout.sectionSpacing) {
+                        // Level and XP Section
+                        levelProgressSection
+                        
+                        // Quick Stats Section
+                        VStack(spacing: 16) {
+                            DSPremiumSectionHeader(
+                                title: "Quick Stats",
+                                subtitle: "Your performance at a glance",
+                                icon: "chart.bar.fill"
+                            )
                             
-                            PhotosPicker(selection: $selectedItem, matching: .images) {
-                                if let imageURL = user.profileImageURL {
-                                    AsyncImage(url: URL(string: imageURL)) { image in
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                    } placeholder: {
-                                        Image(systemName: "person.circle.fill")
-                                            .resizable()
-                                            .foregroundColor(.white)
-                                    }
-                                    .frame(width: 110, height: 110)
-                                    .clipShape(Circle())
-                                    .overlay(
-                                        Circle()
-                                            .fill(Color.black.opacity(0.3))
-                                            .frame(width: 110, height: 110)
-                                            .overlay(
-                                                Image(systemName: "camera.fill")
-                                                    .font(.title2)
-                                                    .foregroundColor(.white)
-                                            )
-                                            .opacity(0) // Hidden by default, will show on hover/press
-                                    )
-                                } else {
-                                    ZStack {
-                                        Image(systemName: "person.circle.fill")
-                                            .resizable()
-                                            .frame(width: 110, height: 110)
-                                            .foregroundColor(.white)
-                                        
-                                        Circle()
-                                            .fill(Color.black.opacity(0.3))
-                                            .frame(width: 110, height: 110)
-                                            .overlay(
-                                                VStack(spacing: 4) {
-                                                    Image(systemName: "camera.fill")
-                                                        .font(.title2)
-                                                    Text("Add Photo")
-                                                        .font(.caption)
-                                                        .fontWeight(.medium)
-                                                }
-                                                .foregroundColor(.white)
-                                            )
-                                    }
-                                }
-                            }
-                            .onChange(of: selectedItem) { _, newItem in
-                                Task {
-                                    await MainActor.run {
-                                        isUploadingImage = true
-                                        uploadError = nil
-                                    }
-                                    
-                                    if let data = try? await newItem?.loadTransferable(type: Data.self),
-                                       let uiImage = UIImage(data: data) {
-                                        do {
-                                            try await appState.updateProfileImage(uiImage)
-                                            LoggingService.shared.log("Profile image updated successfully")
-                                        } catch {
-                                            let errorMessage = error.localizedDescription
-                                            LoggingService.shared.logError(error, context: "Profile image update")
-                                            
-                                            await MainActor.run {
-                                                uploadError = errorMessage
-                                                showingUploadError = true
-                                            }
-                                        }
-                                    } else {
-                                        await MainActor.run {
-                                            uploadError = "Failed to load selected image"
-                                            showingUploadError = true
-                                        }
-                                    }
-                                    
-                                    await MainActor.run {
-                                        isUploadingImage = false
-                                        selectedItem = nil
-                                    }
-                                }
-                            }
-                            .disabled(isUploadingImage)
-                            
-                            // Loading overlay
-                            if isUploadingImage {
-                                Circle()
-                                    .fill(Color.black.opacity(0.5))
-                                    .frame(width: 110, height: 110)
-                                    .overlay(
-                                        VStack(spacing: 8) {
-                                            ProgressView()
-                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                .scaleEffect(1.2)
-                                            
-                                            Text("Uploading...")
-                                                .font(.caption)
-                                                .foregroundColor(.white)
-                                        }
-                                    )
-                            }
-                            
-                            // Level Badge
-                            VStack {
-                                Spacer()
-                                HStack {
-                                    Spacer()
-                                    Text("\(XPManager.calculateLevel(from: user.xp))")
-                                        .font(.caption)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(
-                                            Capsule()
-                                                .fill(Color.orange)
-                                                .shadow(radius: 2)
-                                        )
-                                        .offset(x: -10, y: -10)
-                                }
+                            if let user = appState.currentUser {
+                                quickStatsGrid(user: user)
                             }
                         }
                         
-                        // Name and Skill Level
-                        VStack(spacing: 4) {
-                            Text(user.displayName.isEmpty ? user.email.components(separatedBy: "@").first ?? "Player" : user.displayName)
-                                .font(DS.Font.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
+                        // Daily Challenges Section
+                        VStack(spacing: 16) {
+                            DSPremiumSectionHeader(
+                                title: "Daily Challenges",
+                                subtitle: "Complete to earn XP",
+                                icon: "target"
+                            )
                             
-                            HStack(spacing: 8) {
-                                if !user.skillLevel.isEmpty {
-                                    Text(user.skillLevel.uppercased())
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 4)
-                                        .background(
-                                            Capsule()
-                                                .fill(skillLevelColor(user.skillLevel))
-                                                .shadow(radius: 1)
-                                        )
-                                }
-                                
-                                if !user.location.isEmpty {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "location.fill")
-                                        Text(user.location)
-                                    }
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.9))
-                                }
-                            }
+                            dailyChallengesContent
+                        }
+                        
+                        // Achievements Section
+                        VStack(spacing: 16) {
+                            DSPremiumSectionHeader(
+                                title: "Achievements",
+                                subtitle: "Your trophies and milestones",
+                                icon: "trophy.fill",
+                                action: { showingAllAchievements = true }
+                            )
                             
-                            // Share Profile Button
-                            Button(action: shareProfile) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "square.and.arrow.up")
-                                    Text("Share Profile")
-                                }
-                                .font(.caption)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.3))
-                                        .shadow(radius: 1)
-                                )
-                                .foregroundColor(.white)
-                            }
-                            .padding(.top, 8)
+                            achievementsContent
+                        }
+                        
+                        // Recent Activity Section
+                        VStack(spacing: 16) {
+                            DSPremiumSectionHeader(
+                                title: "Recent Activity",
+                                subtitle: "Your latest matches",
+                                icon: "clock.arrow.circlepath",
+                                action: userMatches.isEmpty ? nil : { showingMatchHistory = true }
+                            )
+                            
+                            recentActivityContent
+                        }
+                        
+                        // Detailed Stats Section
+                        VStack(spacing: 16) {
+                            DSPremiumSectionHeader(
+                                title: "Detailed Statistics",
+                                subtitle: "In-depth performance analysis",
+                                icon: "chart.line.uptrend.xyaxis"
+                            )
+                            
+                            detailedStatsContent
                         }
                     }
-                    .padding(.top, 20)
+                    .padding(.horizontal, DS.Layout.horizontalPadding)
+                    .padding(.top, DS.Layout.sectionSpacing)
+                    .padding(.bottom, max(safeAreaBottom, 20) + 60)
+                    .opacity(animateContent ? 1 : 0)
+                    .offset(y: animateContent ? 0 : 20)
+                    .animation(.easeOut(duration: 0.6).delay(0.3), value: animateContent)
                 }
             }
         }
+        .background(DS.Color.backgroundGradient)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.8).delay(0.1)) {
+                animateContent = true
+            }
+        }
+        .sheet(isPresented: $isEditingProfile) {
+            if let user = appState.currentUser {
+                ProfileEditView(user: user)
+            }
+        }
+        .sheet(isPresented: $showingMatchHistory) {
+            MatchHistoryView()
+        }
+        .sheet(isPresented: $showingAllAchievements) {
+            AchievementsView()
+        }
+        .alert("Upload Error", isPresented: $showingUploadError) {
+            Button("OK") { uploadError = nil }
+        } message: {
+            Text(uploadError ?? "Unknown error occurred")
+        }
+    }
+    
+    // MARK: - Safe Area Aware Profile Header
+    
+    private func profileHeaderWithSafeArea(safeAreaTop: CGFloat) -> some View {
+        ZStack {
+            // Enhanced gradient background
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            DS.Color.accent.opacity(0.9),
+                            DS.Color.premium.opacity(0.7),
+                            DS.Color.accent.opacity(0.5)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    // Subtle pattern overlay
+                    Circle()
+                        .fill(Color.white.opacity(0.1))
+                        .frame(width: 300, height: 300)
+                        .offset(x: -100, y: -50)
+                        .blur(radius: 20)
+                )
+            
+            VStack(spacing: 0) {
+                // Dynamic Island/Notch safe area spacer
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: max(safeAreaTop + 10, 54)) // Extra 10pt buffer, minimum 54pt
+                
+                // Navigation bar space for sidebar navigation
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 50) // Navigation title space
+                
+                // Content area with proper padding
+                VStack(spacing: 20) {
+                    if let user = appState.currentUser {
+                        // Profile photo and edit controls
+                        HStack {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Profile")
+                                    .font(DS.Font.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                
+                                Text(user.displayName.isEmpty ? user.email.components(separatedBy: "@").first ?? "Player" : user.displayName)
+                                    .font(DS.Font.body)
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            
+                            Spacer()
+                            
+                            // Profile image with controls
+                            ZStack {
+                                Circle()
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 3)
+                                    .frame(width: 70, height: 70)
+                                
+                                PhotosPicker(selection: $selectedItem, matching: .images) {
+                                    if let imageURL = user.profileImageURL {
+                                        AsyncImage(url: URL(string: imageURL)) { image in
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                        } placeholder: {
+                                            Image(systemName: "person.circle.fill")
+                                                .resizable()
+                                                .foregroundColor(.white)
+                                        }
+                                        .frame(width: 64, height: 64)
+                                        .clipShape(Circle())
+                                    } else {
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.white.opacity(0.2))
+                                                .frame(width: 64, height: 64)
+                                            
+                                            Image(systemName: "camera.fill")
+                                                .font(.title3)
+                                                .foregroundColor(.white)
+                                        }
+                                    }
+                                }
+                                .onChange(of: selectedItem) { _, newItem in
+                                    Task {
+                                        await MainActor.run {
+                                            isUploadingImage = true
+                                            uploadError = nil
+                                        }
+                                        
+                                        if let data = try? await newItem?.loadTransferable(type: Data.self),
+                                           let uiImage = UIImage(data: data) {
+                                            do {
+                                                try await appState.updateProfileImage(uiImage)
+                                                LoggingService.shared.log("Profile image updated successfully")
+                                            } catch {
+                                                let errorMessage = error.localizedDescription
+                                                LoggingService.shared.logError(error, context: "Profile image update")
+                                                
+                                                await MainActor.run {
+                                                    uploadError = errorMessage
+                                                    showingUploadError = true
+                                                }
+                                            }
+                                        } else {
+                                            await MainActor.run {
+                                                uploadError = "Failed to load selected image"
+                                                showingUploadError = true
+                                            }
+                                        }
+                                        
+                                        await MainActor.run {
+                                            isUploadingImage = false
+                                            selectedItem = nil
+                                        }
+                                    }
+                                }
+                                .disabled(isUploadingImage)
+                                
+                                // Level badge
+                                Text("\(XPManager.calculateLevel(from: user.xp))")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.orange)
+                                    )
+                                    .offset(x: 20, y: 20)
+                            }
+                            
+                            // Action buttons
+                            VStack(spacing: 8) {
+                                Button {
+                                    shareProfile()
+                                } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .frame(width: 28, height: 28)
+                                        .background(Color.white.opacity(0.2))
+                                        .clipShape(Circle())
+                                }
+
+                                Button {
+                                    isEditingProfile = true
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .frame(width: 28, height: 28)
+                                        .background(Color.white.opacity(0.2))
+                                        .clipShape(Circle())
+                                }
+                            }
+                        }
+                        .padding(.horizontal, DS.Layout.horizontalPadding)
+                        
+                        // Quick stats summary
+                        HStack(spacing: 24) {
+                            quickStatItem("ELO", "\(user.elo)", "star.fill")
+                            quickStatItem("Level", "\(XPManager.calculateLevel(from: user.xp))", "bolt.fill")
+                            quickStatItem("Wins", "\(user.wins)", "trophy.fill")
+                        }
+                        .padding(.horizontal, DS.Layout.horizontalPadding)
+                    }
+                }
+                .padding(.bottom, 24) // Bottom padding for content
+            }
+        }
+        .frame(height: calculateHeaderHeight(safeAreaTop: safeAreaTop))
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 24,
+                bottomTrailingRadius: 24,
+                topTrailingRadius: 0
+            )
+        )
+    }
+    
+    // Calculate dynamic header height based on device safe area
+    private func calculateHeaderHeight(safeAreaTop: CGFloat) -> CGFloat {
+        let dynamicIslandSpace = max(safeAreaTop + 10, 54) // Safe area + buffer
+        let navigationSpace: CGFloat = 50 // Navigation title space
+        let contentSpace: CGFloat = 160 // Content area
+        
+        return dynamicIslandSpace + navigationSpace + contentSpace
+    }
+    
+    private func quickStatItem(_ title: String, _ value: String, _ icon: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white.opacity(0.9))
+            
+            Text(value)
+                .font(DS.Font.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            
+            Text(title)
+                .font(DS.Font.caption2)
+                .foregroundColor(.white.opacity(0.8))
+        }
+        .frame(maxWidth: .infinity)
     }
     
     // MARK: - Level Progress Section
     
     private var levelProgressSection: some View {
-        VStack(spacing: 12) {
-            if let user = appState.currentUser {
-                let currentLevel = XPManager.calculateLevel(from: user.xp)
-                let nextLevelXP = XPManager.xpRequiredForLevel(currentLevel + 1)
-                let currentLevelXP = XPManager.xpRequiredForLevel(currentLevel)
-                let rawProgress = Double(user.xp - currentLevelXP) / Double(nextLevelXP - currentLevelXP)
-                let progress = min(max(rawProgress, 0), 1)
-                
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Level \(currentLevel)")
-                            .font(DS.Font.headline)
-                            .fontWeight(.bold)
+        DSGlassMorphismCard {
+            VStack(spacing: 16) {
+                if let user = appState.currentUser {
+                    let currentLevel = XPManager.calculateLevel(from: user.xp)
+                    let nextLevelXP = XPManager.xpRequiredForLevel(currentLevel + 1)
+                    let currentLevelXP = XPManager.xpRequiredForLevel(currentLevel)
+                    let rawProgress = Double(user.xp - currentLevelXP) / Double(nextLevelXP - currentLevelXP)
+                    let progress = min(max(rawProgress, 0), 1)
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Level \(currentLevel)")
+                                .font(DS.Font.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(DS.Color.primary)
+                            
+                            Text("\(user.xp - currentLevelXP) / \(nextLevelXP - currentLevelXP) XP")
+                                .font(DS.Font.caption)
+                                .foregroundColor(DS.Color.secondary)
+                        }
                         
-                        Text("\(user.xp - currentLevelXP) / \(nextLevelXP - currentLevelXP) XP")
+                        Spacer()
+                        
+                        Text("Total XP: \(user.xp)")
                             .font(DS.Font.caption)
                             .foregroundColor(DS.Color.secondary)
                     }
                     
-                    Spacer()
-                    
-                    Text("Total XP: \(user.xp)")
-                        .font(DS.Font.caption)
-                        .foregroundColor(DS.Color.secondary)
+                    DSProgressBar(value: progress, color: .orange)
+                        .frame(height: 8)
                 }
-                
-                DSProgressBar(value: progress, color: .orange)
             }
         }
-        .dsHorizontalPadding()
-        .dsCard()
     }
     
     // MARK: - Quick Stats Grid
@@ -424,29 +459,23 @@ struct ProfileView: View {
             VStack(spacing: 8) {
                 ProfileDailyChallengeCard(
                     title: "Play a Match",
-                    description: "Complete 1 match today",
                     progress: 1.0,
                     reward: "+50 XP",
-                    isCompleted: true,
-                    icon: "gamecontroller.fill"
+                    isCompleted: true
                 )
                 
                 ProfileDailyChallengeCard(
                     title: "Win a Game",
-                    description: "Win 1 game today",
                     progress: 1.0,
                     reward: "+75 XP",
-                    isCompleted: true,
-                    icon: "trophy.fill"
+                    isCompleted: true
                 )
                 
                 ProfileDailyChallengeCard(
                     title: "Social Player",
-                    description: "Play with 2 different opponents",
                     progress: 0.5,
                     reward: "+100 XP",
-                    isCompleted: false,
-                    icon: "person.2.fill"
+                    isCompleted: false
                 )
             }
         }
@@ -557,7 +586,12 @@ struct ProfileView: View {
                 if !userMatches.isEmpty {
                     VStack(spacing: 8) {
                         ForEach(Array(userMatches.prefix(3))) { match in
-                            ProfileRecentMatchCard(match: match, currentUser: user)
+                            ProfileRecentMatchCard(
+                                opponent: match.opponent(for: user),
+                                result: match.result(for: user),
+                                score: match.score,
+                                date: RelativeDateTimeFormatter().localizedString(for: match.date, relativeTo: Date())
+                            )
                         }
                     }
                 } else {
@@ -599,7 +633,12 @@ struct ProfileView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(getMonthlyPerformanceData(), id: \.month) { data in
-                                    MonthlyPerformanceCard(data: data)
+                                    MonthlyPerformanceCard(
+                                        title: data.month,
+                                        value: "\(data.matches) matches",
+                                        trend: data.eloChange > 0 ? "+\(data.eloChange)" : "\(data.eloChange)",
+                                        color: data.eloChange > 0 ? .green : .red
+                                    )
                                 }
                             }
                             .padding(.horizontal, 4)
@@ -801,53 +840,7 @@ struct ProfileView: View {
 
 // MARK: - Supporting Views
 
-struct QuickStatBadge: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-    let gradient: Bool
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                if gradient {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [color, color.opacity(0.6)]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 44, height: 44)
-                } else {
-                    Circle()
-                        .fill(color.opacity(0.2))
-                        .frame(width: 44, height: 44)
-                }
-                
-                Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundColor(gradient ? .white : color)
-            }
-            
-            Text(value)
-                .font(DS.Font.subheadline)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
-            
-            Text(title)
-                .font(DS.Font.caption2)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity)
-        .background(DS.Color.surfaceAlt)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
-    }
-}
+// QuickStatBadge moved to DesignSystem.swift to avoid duplicate definitions
 
 struct AchievementCategoryRow: View {
     let category: Achievement.AchievementType

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dinkdropzone._tcp</string>
+		<string>_dinkdropzone._udp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>DinkDrop uses local network to find nearby players for local matches via Bluetooth and WiFi.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>DinkDrop uses Bluetooth to connect with nearby players for local matches.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>DinkDrop uses Bluetooth to connect with nearby players for local matches.</string>
+</dict>
+</plist>

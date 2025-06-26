@@ -65,47 +65,47 @@ struct EmailAuthView: View {
                         VStack(spacing: 20) {
                             // Full Name (Sign Up only)
                             if isSignUp {
-                                CustomTextField(
+                                DSPremiumTextField(
                                     title: "Full Name",
+                                    placeholder: "Enter your full name",
                                     text: $fullName,
-                                    icon: "person.fill",
-                                    placeholder: "Enter your full name"
+                                    icon: "person.fill"
                                 )
                                 .transition(.asymmetric(
-                                    insertion: .move(edge: .top).combined(with: .opacity),
-                                    removal: .move(edge: .top).combined(with: .opacity)
+                                    insertion: AnyTransition.move(edge: .top).combined(with: .opacity),
+                                    removal: AnyTransition.move(edge: .top).combined(with: .opacity)
                                 ))
                             }
                             
                             // Email
-                            CustomTextField(
+                            DSPremiumTextField(
                                 title: "Email",
-                                text: $email,
-                                icon: "envelope.fill",
                                 placeholder: "Enter your email",
-                                keyboardType: .emailAddress,
-                                textContentType: .emailAddress
+                                text: $email,
+                                icon: "envelope.fill"
                             )
                             
                             // Password
-                            CustomSecureField(
+                            DSPremiumTextField(
                                 title: "Password",
+                                placeholder: "Enter your password",
                                 text: $password,
-                                showPassword: $showPassword,
-                                placeholder: "Enter your password"
+                                icon: "lock.fill",
+                                isSecure: true
                             )
                             
                             // Confirm Password (Sign Up only)
                             if isSignUp {
-                                CustomSecureField(
+                                DSPremiumTextField(
                                     title: "Confirm Password",
+                                    placeholder: "Confirm your password",
                                     text: $confirmPassword,
-                                    showPassword: $showConfirmPassword,
-                                    placeholder: "Confirm your password"
+                                    icon: "lock.fill",
+                                    isSecure: true
                                 )
                                 .transition(.asymmetric(
-                                    insertion: .move(edge: .top).combined(with: .opacity),
-                                    removal: .move(edge: .top).combined(with: .opacity)
+                                    insertion: AnyTransition.move(edge: .top).combined(with: .opacity),
+                                    removal: AnyTransition.move(edge: .top).combined(with: .opacity)
                                 ))
                             }
                         }
@@ -118,14 +118,17 @@ struct EmailAuthView: View {
                                 await handleAuthentication()
                             }
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
                                 if isLoading {
-                                    ProgressView()
-                                        .tint(.white)
-                                        .scaleEffect(0.9)
+                                    DotsLoadingView()
+                                        .scaleEffect(0.7)
                                 } else {
+                                    Image(systemName: isSignUp ? "person.badge.plus" : "person.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    
                                     Text(isSignUp ? "Create Account" : "Sign In")
                                         .font(.headline)
+                                        .fontWeight(.semibold)
                                 }
                             }
                             .frame(maxWidth: .infinity)

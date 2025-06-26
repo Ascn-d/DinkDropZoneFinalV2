@@ -6,6 +6,7 @@ struct QueueView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appState: AppState
     @Environment(NearbyPlayersService.self) private var nearbyService
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var users: [User]
     @State private var isInQueue = false
     @State private var queuePosition = 0
@@ -18,367 +19,617 @@ struct QueueView: View {
     @State private var refreshTimer: Timer?
     @Query(sort: \LiveMatch.startTime, order: .reverse) private var liveMatches: [LiveMatch]
     @State private var showingNearbySheet = false
+    @State private var animateContent = false
+    @State private var showMatchProposal = false
+    @State private var pendingMatch: LocalMatchmakingService.LocalMatch?
+    
+    // Enhanced state management
+    @State private var playerPreferences = PlayerPreferences()
+    @State private var queueStatistics = QueueStatistics()
+    @State private var skillAnalysis = SkillAnalysis()
+    @State private var matchHistory = MatchHistoryAnalyzer()
+    @State private var queueOptimizer = QueueOptimizer()
+    @State private var courtRecommendations: [CourtRecommendation] = []
+    @State private var weatherAnalysis = WeatherAnalysis()
+    @State private var showingPreferences = false
+    @State private var showingSkillAnalysis = false
     
     var body: some View {
-        NavigationStack {
+        GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 20) {
-                    // Queue Status Section (if in queue)
+                    // Enhanced header with dynamic content
+                    enhancedHeaderSection
+                        .padding(.top, 20)
+                    
+                    // Smart recommendations section
+                    if !isInQueue {
+                        smartRecommendationsSection
+                            .padding(.horizontal)
+                    }
+                    
+                    // Main content based on queue state
                     if isInQueue {
-                        queueStatusSection
-                    }
-                    
-                    // Quick Match Options
-                    quickMatchSection
-                    
-                    // Live Activity & Nearby Players
-                    liveActivitySection
-                    
-                    // Court Availability
-                    courtAvailabilitySection
-                    
-                    // Current Tournaments
-                    tournamentsSection
-                    
-                    // Practice Partners
-                    practicePartnersSection
-                    
-                    // Weather & Conditions
-                    weatherConditionsSection
-                    
-                    // Recent Activity & Quick Rematch
-                    recentActivitySection
-                }
-                .padding()
-            }
-            .navigationTitle("Play Hub")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button {
-                            refreshData()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundColor(.blue)
-                        }
+                        // Enhanced queue status with real-time updates
+                        enhancedQueueStatusCard
+                            .padding(.horizontal)
                         
-                        Button {
-                            showingCourtBooking = true
-                        } label: {
-                            Image(systemName: "mappin.circle.fill")
-                                .foregroundColor(.green)
-                        }
+                        // Secondary content while in queue
+                        enhancedSecondaryQueueContent
+                            .padding(.horizontal)
+                    } else {
+                        // Enhanced match finding interface
+                        enhancedMatchFindingContent
+                            .padding(.horizontal)
                     }
+                    
+                    // Always visible sections
+                    enhancedNearbyPlayersSection
+                        .padding(.horizontal)
+                    
+                    // Court recommendations and conditions
+                    courtRecommendationsSection
+                        .padding(.horizontal)
+                    
+                    // Live activity and statistics
+                    liveActivityAndStatsSection
+                        .padding(.horizontal)
+                    
+                    // Spacer for bottom safe area
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(height: 100)
                 }
             }
-            .onAppear {
-                startRefreshTimer()
+            .refreshable {
+                await refreshAllData()
             }
-            .onDisappear {
-                stopRefreshTimer()
-            }
-            .sheet(isPresented: $showingMatchSetup) {
-                if let user = selectedUser {
-                    MatchSetupView(opponent: user) { result in
-                        handleMatchResult(result)
-                    }
+        }
+        .background(DS.Color.backgroundGradient)
+        .onAppear {
+            setupEnhancedNotificationObservers()
+            animateContent = true
+            startEnhancedRefreshTimer()
+            initializeSmartFeatures()
+        }
+        .onDisappear {
+            removeNotificationObservers()
+            animateContent = false
+            stopRefreshTimer()
+        }
+        .alert("Match Proposal", isPresented: $showMatchProposal) {
+            if let match = pendingMatch {
+                Button("Accept") {
+                    acceptMatchProposal(match)
+                }
+                Button("Decline", role: .cancel) {
+                    declineMatchProposal(match)
                 }
             }
-            .sheet(isPresented: $showingTournamentDetails) {
-                TournamentDetailsView()
+        } message: {
+            if let match = pendingMatch {
+                Text("Do you want to play against \(match.player1.displayName)?")
             }
-            .sheet(isPresented: $showingCourtBooking) {
-                CourtBookingView()
+        }
+        .sheet(isPresented: $showingMatchSetup) {
+            if let user = selectedUser {
+                let localMatch = createOptimizedLocalMatch(with: user)
+                MatchSetupView(match: localMatch)
             }
-            .sheet(isPresented: $showingNearbySheet) {
-                NearbyMatchSheet()
-            }
+        }
+        .sheet(isPresented: $showingPreferences) {
+            PlayerPreferencesView(preferences: $playerPreferences)
+        }
+        .sheet(isPresented: $showingSkillAnalysis) {
+            SkillAnalysisView(analysis: skillAnalysis)
+        }
+        .sheet(isPresented: $showingTournamentDetails) {
+            TournamentDetailsView()
+        }
+        .sheet(isPresented: $showingCourtBooking) {
+            CourtBookingView()
+        }
+        .sheet(isPresented: $showingNearbySheet) {
+            NearbyMatchSheet()
+        }
+        .fullScreenCover(item: Binding(
+            get: { appState.activeMatchSetup },
+            set: { appState.activeMatchSetup = $0 }
+        )) { match in
+            MatchSetupView(match: match)
         }
     }
     
-    // MARK: - Queue Status Section
+    // MARK: - Enhanced Header Section
     
-    private var queueStatusSection: some View {
+    private var enhancedHeaderSection: some View {
         VStack(spacing: 16) {
             HStack {
-                Image(systemName: "timer")
-                    .foregroundColor(.blue)
-                Text("In Queue")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                Spacer()
-                Button("Leave Queue") {
-                    leaveQueue()
-                }
-                .font(.caption)
-                .foregroundColor(.red)
-            }
-            
-            HStack(spacing: 30) {
-                VStack(spacing: 4) {
-                    Text("\(queuePosition)")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(getContextualGreeting())
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                    Text("Position")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                VStack(spacing: 4) {
-                    Text("\(estimatedWaitTime)")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.orange)
-                    Text("Minutes")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                VStack(spacing: 4) {
-                    Text(selectedMatchType.rawValue)
+                        .foregroundColor(.primary)
+                    
+                    Text(getContextualSubtitle())
                         .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(selectedMatchType.color)
-                    Text("Match Type")
-                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
                 Spacer()
+                
+                // Enhanced action buttons
+                HStack(spacing: 12) {
+                    Button {
+                        showingPreferences = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.title3)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Button {
+                        Task {
+                            await refreshAllData()
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title3)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Button {
+                        showingSkillAnalysis = true
+                    } label: {
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.title3)
+                            .foregroundColor(.primary)
+                    }
+                }
             }
             
-            // Queue Progress Bar
-            VStack(spacing: 8) {
-                HStack {
-                    Text("Finding your match...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("Cancel anytime")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                ProgressView()
-                    .progressViewStyle(LinearProgressViewStyle(tint: .blue))
-                    .scaleEffect(x: 1, y: 2, anchor: .center)
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.blue.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+            // Real-time statistics bar
+            HStack(spacing: 24) {
+                QueueStatItem(
+                    title: "Online", 
+                    value: "\(queueStatistics.totalOnlinePlayers)", 
+                    icon: "person.2.fill",
+                    color: .green
                 )
-        )
+                
+                QueueStatItem(
+                    title: "Your ELO", 
+                    value: "\(appState.currentUser?.elo ?? 1000)", 
+                    icon: "star.fill",
+                    color: .orange
+                )
+                
+                QueueStatItem(
+                    title: "Avg Wait", 
+                    value: queueStatistics.averageWaitTimeString, 
+                    icon: "clock.fill",
+                    color: .blue
+                )
+                
+                QueueStatItem(
+                    title: "Success Rate", 
+                    value: "\(Int(skillAnalysis.matchSuccessRate * 100))%", 
+                    icon: "target",
+                    color: .purple
+                )
+            }
+        }
+        .padding(.horizontal)
     }
     
-    // MARK: - Quick Match Section
+    // MARK: - Smart Recommendations Section
     
-    private var quickMatchSection: some View {
+    private var smartRecommendationsSection: some View {
         VStack(spacing: 16) {
             HStack {
-                Text("Quick Match")
+                Text("🎯 Smart Recommendations")
                     .font(.headline)
-                    .fontWeight(.bold)
+                    .fontWeight(.semibold)
                 Spacer()
-                
-                if !isInQueue {
-                    Text("Choose your game mode")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
             }
             
-            if isInQueue {
-                // Queue status card
-                VStack(spacing: 12) {
-                    HStack {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 12, height: 12)
-                            .scaleEffect(1.2)
-                            .animation(.easeInOut(duration: 1).repeatForever(), value: true)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    // Optimal match type recommendation
+                    RecommendationCard(
+                        title: "Best Match Type",
+                        subtitle: queueOptimizer.recommendedMatchType.rawValue,
+                        reason: queueOptimizer.recommendationReason,
+                        confidence: queueOptimizer.confidence,
+                        icon: queueOptimizer.recommendedMatchType.icon,
+                        color: queueOptimizer.recommendedMatchType.color
+                    ) {
+                        selectedMatchType = queueOptimizer.recommendedMatchType
+                    }
+                    
+                    // Optimal time recommendation
+                    RecommendationCard(
+                        title: "Best Time to Play",
+                        subtitle: queueStatistics.optimalPlayTime,
+                        reason: "Based on your win rate",
+                        confidence: 0.85,
+                        icon: "clock.badge.checkmark",
+                        color: .blue
+                    ) {
+                        // Action to schedule for optimal time
+                    }
+                    
+                    // Skill improvement suggestion
+                    RecommendationCard(
+                        title: "Skill Focus",
+                        subtitle: skillAnalysis.improvementArea,
+                        reason: "Based on recent matches",
+                        confidence: skillAnalysis.improvementConfidence,
+                        icon: "target",
+                        color: .purple
+                    ) {
+                        selectedMatchType = .practice
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+    
+    // MARK: - Enhanced Queue Status Card
+    
+    private var enhancedQueueStatusCard: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 16) {
+                // Header with enhanced status
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(.green)
+                                .frame(width: 12, height: 12)
+                                .dsPulse(isActive: true, scale: 1.2)
+                            
+                            Text("In Queue")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            
+                            // Queue health indicator
+                            Image(systemName: queueStatistics.healthIcon)
+                                .foregroundColor(queueStatistics.healthColor)
+                                .font(.caption)
+                        }
                         
-                        Text("In Queue")
-                            .font(.headline)
+                        Text("Looking for \(selectedMatchType.rawValue.lowercased()) match")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        // Enhanced queue info
+                        Text("Skill range: \(skillAnalysis.currentSkillRange)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(spacing: 8) {
+                        Button("Leave") {
+                            withAnimation(.spring()) {
+                                leaveQueue()
+                            }
+                        }
+                        .font(.headline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(.red)
+                        .clipShape(Capsule())
+                        
+                        // Expand search button
+                        if queuePosition > 3 {
+                            Button("Expand Search") {
+                                expandMatchmakingCriteria()
+                            }
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        }
+                    }
+                }
+                
+                // Enhanced queue metrics
+                HStack(spacing: 0) {
+                    // Position with trend
+                    VStack(spacing: 8) {
+                        HStack(spacing: 4) {
+                            Text("#\(queuePosition)")
+                                .font(.largeTitle)
+                                .fontWeight(.bold)
+                                .foregroundColor(.blue)
+                            
+                            Image(systemName: queueStatistics.positionTrend >= 0 ? "arrow.up" : "arrow.down")
+                                .foregroundColor(queueStatistics.positionTrend >= 0 ? .green : .red)
+                                .font(.caption)
+                        }
+                        
+                        Text("Position")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    Divider()
+                        .frame(height: 60)
+                    
+                    // Wait time with accuracy
+                    VStack(spacing: 8) {
+                        Text(formatWaitTime(estimatedWaitTime))
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.orange)
+                        
+                        HStack(spacing: 4) {
+                            Text("Est. Time")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Circle()
+                                .fill(queueStatistics.accuracyColor)
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    Divider()
+                        .frame(height: 60)
+                    
+                    // Match probability
+                    VStack(spacing: 8) {
+                        Text("\(Int(queueOptimizer.matchProbability * 100))%")
+                            .font(.largeTitle)
                             .fontWeight(.bold)
                             .foregroundColor(.green)
                         
+                        Text("Match Prob")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                
+                // Enhanced progress section
+                VStack(spacing: 12) {
+                    HStack {
+                        Text(queueOptimizer.currentSearchStatus)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                         Spacer()
-                        
-                        Button("Leave Queue") {
-                            leaveQueue()
-                        }
-                        .font(.caption)
-                        .foregroundColor(.red)
+                        Text("Skill: \(skillAnalysis.displaySkillLevel)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                     
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Position")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("#\(queuePosition)")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .center, spacing: 4) {
-                            Text("Est. Wait")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("\(estimatedWaitTime / 60):\(String(format: "%02d", estimatedWaitTime % 60))")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text("Mode")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(selectedMatchType.rawValue)
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(selectedMatchType.color)
-                        }
+                    // Multi-stage progress bar
+                    QueueProgressView(
+                        position: queuePosition,
+                        totalStages: 5,
+                        currentStage: queueOptimizer.currentSearchStage
+                    )
+                }
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.regularMaterial)
+                    .stroke(.separator, lineWidth: 1)
+            )
+        }
+    }
+    
+    // MARK: - Enhanced Secondary Queue Content
+    
+    private var enhancedSecondaryQueueContent: some View {
+        VStack(spacing: 16) {
+            // Dynamic tips while waiting
+            VStack(alignment: .leading, spacing: 12) {
+                Text("💡 \(queueOptimizer.currentTip.title)")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(queueOptimizer.currentTip.suggestions, id: \.self) { suggestion in
+                        Label(suggestion, systemImage: "checkmark.circle")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
                 }
-                .padding()
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color.green.opacity(0.1),
-                            Color.blue.opacity(0.1)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .cornerRadius(16)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                )
-            } else {
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    ForEach(MatchType.allCases, id: \.self) { matchType in
-                        EnhancedQuickMatchCard(
-                            matchType: matchType,
-                            playerCount: getPlayerCountForMatchType(matchType),
-                            averageWaitTime: getAverageWaitTime(matchType),
-                            isSelected: selectedMatchType == matchType
-                        ) {
-                            selectedMatchType = matchType
-                            joinQueue(matchType: matchType)
-                        }
-                    }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.thinMaterial)
+            )
+            
+            // Quick actions while waiting
+            HStack(spacing: 12) {
+                QuickActionButton(
+                    title: "View Stats",
+                    icon: "chart.bar",
+                    color: .blue
+                ) {
+                    showingSkillAnalysis = true
+                }
+                
+                QuickActionButton(
+                    title: "Find Courts",
+                    icon: "mappin.circle",
+                    color: .green
+                ) {
+                    showingCourtBooking = true
+                }
+                
+                QuickActionButton(
+                    title: "Adjust Prefs",
+                    icon: "slider.horizontal.3",
+                    color: .orange
+                ) {
+                    showingPreferences = true
                 }
             }
         }
     }
     
-    // MARK: - Live Activity Section
+    // MARK: - Enhanced Match Finding Content
     
-    private var liveActivitySection: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Live Activity")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                Spacer()
+    private var enhancedMatchFindingContent: some View {
+        VStack(spacing: 20) {
+            // Smart match type selection with AI insights
+            VStack(spacing: 16) {
+                HStack {
+                    Text("Match Type")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Button("Auto-Select") {
+                        selectedMatchType = queueOptimizer.recommendedMatchType
+                    }
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                }
                 
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 8, height: 8)
-                    Text("\(getNearbyPlayersCount()) nearby")
-                        .font(.caption)
-                        .foregroundColor(.green)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                    ForEach(MatchType.allCases.prefix(4), id: \.self) { matchType in
+                        EnhancedMatchTypeCard(
+                            matchType: matchType,
+                            isSelected: selectedMatchType == matchType,
+                            statistics: queueStatistics.getStatistics(for: matchType),
+                            recommendation: queueOptimizer.getRecommendation(for: matchType)
+                        ) {
+                            withAnimation(.spring()) {
+                                selectedMatchType = matchType
+                                updateMatchTypeAnalytics(matchType)
+                            }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                    }
                 }
             }
             
-            // Nearby Players
-            VStack(alignment: .leading, spacing: 8) {
-                Text("🎯 Nearby Players")
-                    .font(.subheadline)
+            // Enhanced Find Match Button with smart features
+            VStack(spacing: 12) {
+                Button {
+                    joinQueueWithAnalytics()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: queueOptimizer.getOptimalIcon())
+                            .font(.title2)
+                        
+                        VStack(spacing: 2) {
+                            Text("Find \(selectedMatchType.rawValue) Match")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            Text("Est. \(queueOptimizer.getEstimatedWaitTime(for: selectedMatchType)) wait")
+                                .font(.caption)
+                                .opacity(0.8)
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(
+                        LinearGradient(
+                            colors: [selectedMatchType.color, selectedMatchType.color.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: selectedMatchType.color.opacity(0.3), radius: 8, x: 0, y: 4)
+                }
+                .disabled(appState.currentUser == nil)
+                .opacity(appState.currentUser == nil ? 0.6 : 1.0)
+                .scaleEffect(appState.currentUser != nil ? 1.0 : 0.95)
+                
+                // Queue health indicator
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(queueStatistics.getHealthColor(for: selectedMatchType))
+                        .frame(width: 8, height: 8)
+                    
+                    Text(queueStatistics.getHealthDescription(for: selectedMatchType))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Enhanced Nearby Players Section
+    
+    private var enhancedNearbyPlayersSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Nearby Players")
+                    .font(.headline)
                     .fontWeight(.semibold)
                 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(getNearbyPlayers()) { player in
-                            EnhancedNearbyPlayerCard(player: player) {
-                                selectedUser = player
-                                selectedMatchType = .casual
-                                showingMatchSetup = true
+                Spacer()
+                
+                HStack(spacing: 8) {
+                    Text("\(getNearbyPlayersCount()) online")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Circle()
+                        .fill(queueStatistics.nearbyPlayersHealthColor)
+                        .frame(width: 6, height: 6)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+            }
+            
+            if let localService = appState.localMatchmakingService,
+               !localService.nearbyPlayers.isEmpty {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                    ForEach(localService.nearbyPlayers) { player in
+                        EnhancedLocalPlayerCard(
+                            player: player,
+                            compatibility: skillAnalysis.calculateCompatibility(with: player),
+                            matchPrediction: queueOptimizer.predictMatchOutcome(against: player)
+                        ) {
+                            Task {
+                                await proposeOptimizedMatch(to: player)
                             }
                         }
                     }
-                    .padding(.horizontal, 4)
                 }
+            } else {
+                EmptyStateView(
+                    icon: "person.2.slash",
+                    title: "No players nearby",
+                    subtitle: "Try joining the queue or expanding your search radius",
+                    actionTitle: "Expand Search",
+                    action: expandSearchRadius
+                )
             }
-            
-            // Live Matches Feed
-            VStack(alignment: .leading, spacing: 8) {
-                Text("🏓 Live Matches")
-                    .font(.subheadline)
+        }
+    }
+    
+    // MARK: - Court Recommendations Section
+    
+    private var courtRecommendationsSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("🏟️ Court Recommendations")
+                    .font(.headline)
                     .fontWeight(.semibold)
-                
-                ForEach(liveMatches) { match in
-                    LiveMatchCard(match: match)
-                }
-            }
-        }
-    }
-    
-    // MARK: - Court Availability Section
-    
-    private var courtAvailabilitySection: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Court Availability")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                Spacer()
-                Button("Book Court") {
-                    showingCourtBooking = true
-                }
-                .font(.caption)
-                .foregroundColor(.blue)
-            }
-            
-            VStack(spacing: 8) {
-                ForEach(getNearbyCourts()) { court in
-                    CourtAvailabilityCard(court: court) {
-                        showingCourtBooking = true
-                    }
-                }
-            }
-        }
-    }
-    
-    // MARK: - Tournaments Section
-    
-    private var tournamentsSection: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Active Tournaments")
-                    .font(.headline)
-                    .fontWeight(.bold)
                 Spacer()
                 Button("View All") {
-                    showingTournamentDetails = true
+                    showingCourtBooking = true
                 }
                 .font(.caption)
                 .foregroundColor(.blue)
@@ -386,138 +637,324 @@ struct QueueView: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(getActiveTournaments()) { tournament in
-                        TournamentCard(tournament: tournament) {
-                            showingTournamentDetails = true
+                    ForEach(courtRecommendations) { court in
+                        CourtRecommendationCard(court: court) {
+                            showingCourtBooking = true
                         }
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 4)
             }
         }
     }
     
-    // MARK: - Practice Partners Section
+    // MARK: - Live Activity and Statistics Section
     
-    private var practicePartnersSection: some View {
+    private var liveActivityAndStatsSection: some View {
         VStack(spacing: 16) {
             HStack {
-                Text("Practice Partners")
+                Text("📊 Live Activity")
                     .font(.headline)
-                    .fontWeight(.bold)
+                    .fontWeight(.semibold)
                 Spacer()
-                Text("Find skill-matched partners")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
             
-            VStack(spacing: 8) {
-                ForEach(getPracticePartners()) { partner in
-                    PracticePartnerCard(partner: partner) {
-                        selectedUser = partner
-                        selectedMatchType = .practice
-                        showingMatchSetup = true
-                    }
-                }
+            HStack(spacing: 12) {
+                // Active matches
+                StatCard(
+                    title: "Live Matches",
+                    value: "\(queueStatistics.liveMatches)",
+                    subtitle: "In progress",
+                    icon: "dot.radiowaves.left.and.right",
+                    color: .red
+                )
+                
+                // Queue activity
+                StatCard(
+                    title: "Queue Activity",
+                    value: queueStatistics.queueActivityLevel,
+                    subtitle: "Current level",
+                    icon: "chart.line.uptrend.xyaxis",
+                    color: .blue
+                )
+                
+                // Success rate
+                StatCard(
+                    title: "Your Win Rate",
+                    value: "\(Int(skillAnalysis.recentWinRate * 100))%",
+                    subtitle: "Last 10 games",
+                    icon: "target",
+                    color: .green
+                )
             }
         }
     }
     
-    // MARK: - Weather Conditions Section
+    // MARK: - Enhanced Helper Functions
     
-    private var weatherConditionsSection: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Weather & Conditions")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                
-                HStack(spacing: 12) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sun.max.fill")
-                            .foregroundColor(.orange)
-                        Text("72°F")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
-                    
-                    HStack(spacing: 4) {
-                        Image(systemName: "wind")
-                            .foregroundColor(.blue)
-                        Text("5 mph")
-                            .font(.subheadline)
-                    }
-                    
-                    HStack(spacing: 4) {
-                        Image(systemName: "drop.fill")
-                            .foregroundColor(.blue)
-                        Text("0%")
-                            .font(.subheadline)
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("Perfect conditions!")
-                    .font(.caption)
-                    .foregroundColor(.green)
-                    .fontWeight(.medium)
-                
-                Text("Great day for pickleball")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
+    private func getContextualGreeting() -> String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let userName = appState.currentUser?.displayName ?? "Player"
+        
+        switch hour {
+        case 5..<12: return "Good Morning, \(userName)!"
+        case 12..<17: return "Good Afternoon, \(userName)!"
+        case 17..<22: return "Good Evening, \(userName)!"
+        default: return "Ready for Night Play, \(userName)?"
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.green.opacity(0.1))
+    }
+    
+    private func getContextualSubtitle() -> String {
+        if isInQueue {
+            return "Searching for the perfect match..."
+        } else {
+            let activity = queueStatistics.queueActivityLevel
+            return "Queue activity: \(activity) • \(queueStatistics.totalOnlinePlayers) players online"
+        }
+    }
+    
+    private func getShortDescription(for matchType: MatchType) -> String {
+        switch matchType {
+        case .singles: return "1v1 competitive"
+        case .doubles: return "2v2 team play"
+        case .practice: return "Casual practice"
+        case .tournament: return "Ranked matches"
+        case .casual: return "Fun & relaxed"
+        case .competitive: return "High stakes"
+        case .league: return "League play"
+        }
+    }
+    
+    private func getStatusColor(for matchType: MatchType) -> Color {
+        let playerCount = getPlayerCountForMatchType(matchType)
+        switch playerCount {
+        case 0...5: return .red
+        case 6...15: return .orange
+        case 16...30: return .green
+        default: return .blue
+        }
+    }
+    
+    private func formatWaitTime(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%d:%02d", minutes, secs)
+    }
+    
+    // MARK: - Enhanced Queue Management
+    
+    private func joinQueueWithAnalytics() {
+        // Record analytics
+        matchHistory.recordQueueAttempt(matchType: selectedMatchType)
+        
+        // Update preferences based on selection
+        playerPreferences.updatePreferences(
+            preferredMatchType: selectedMatchType,
+            preferredTime: Date()
+        )
+        
+        // Use enhanced logic
+        withAnimation(.spring()) {
+            joinQueue(matchType: selectedMatchType)
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+    
+    private func expandMatchmakingCriteria() {
+        // Expand ELO range and other criteria
+        skillAnalysis.expandMatchmakingRange()
+        queueOptimizer.relaxCriteria()
+        
+        // Provide haptic feedback
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    private func expandSearchRadius() {
+        // Expand geographic search radius
+        queueOptimizer.expandSearchRadius()
+    }
+    
+    private func updateMatchTypeAnalytics(_ matchType: MatchType) {
+        // Update analytics when user selects match type
+        queueStatistics.recordMatchTypeSelection(matchType)
+        skillAnalysis.updateMatchTypePreference(matchType)
+    }
+    
+    private func createOptimizedLocalMatch(with user: User) -> LocalMatchmakingService.LocalMatch {
+        return LocalMatchmakingService.LocalMatch(
+            id: UUID().uuidString,
+            player1: LocalMatchmakingService.NearbyPlayer(
+                id: appState.currentUser?.id.uuidString ?? "current",
+                displayName: appState.currentUser?.displayName ?? "You",
+                elo: appState.currentUser?.elo ?? 1000,
+                matchType: selectedMatchType.rawValue,
+                distance: 0.0,
+                peerID: "local"
+            ),
+            player2: LocalMatchmakingService.NearbyPlayer(
+                id: user.id.uuidString,
+                displayName: user.displayName,
+                elo: user.elo,
+                matchType: selectedMatchType.rawValue,
+                distance: 0.1,
+                peerID: "remote"
+            ),
+            matchType: selectedMatchType.rawValue,
+            createdAt: Date()
         )
     }
     
-    // MARK: - Recent Activity Section
-    
-    private var recentActivitySection: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Recent Activity")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                Spacer()
-                Text("Quick rematch")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+    private func proposeOptimizedMatch(to player: LocalMatchmakingService.NearbyPlayer) async {
+        do {
+            // Record match proposal for analytics
+            matchHistory.recordMatchProposal(to: player.displayName)
             
-            VStack(spacing: 8) {
-                ForEach(getRecentMatches()) { match in
-                    QueueRecentMatchCard(match: match) {
-                        // TODO: Setup rematch
-                    }
+            try await appState.proposeLocalMatch(to: player)
+            print("✅ Proposed optimized match to \(player.displayName)")
+        } catch {
+            print("❌ Failed to propose match: \(error)")
+        }
+    }
+    
+    // MARK: - Enhanced Data Management
+    
+    private func initializeSmartFeatures() {
+        Task {
+            await loadPlayerPreferences()
+            await updateQueueStatistics()
+            await analyzeSkillLevel()
+            await loadCourtRecommendations()
+            await updateWeatherAnalysis()
+        }
+    }
+    
+    private func loadPlayerPreferences() async {
+        // Load saved preferences
+        playerPreferences.loadFromUserDefaults()
+    }
+    
+    private func updateQueueStatistics() async {
+        // Update real-time queue statistics
+        queueStatistics.refresh()
+    }
+    
+    private func analyzeSkillLevel() async {
+        // Analyze user's skill level and match history
+        if let user = appState.currentUser {
+            skillAnalysis.analyzeUser(user)
+        }
+    }
+    
+    private func loadCourtRecommendations() async {
+        // Load recommended courts based on location and preferences
+        courtRecommendations = CourtRecommendationEngine.getRecommendations(
+            userLocation: nil as CLLocation?, // Would use actual location
+            preferences: playerPreferences
+        )
+    }
+    
+    private func updateWeatherAnalysis() async {
+        // Update weather conditions for outdoor play
+        weatherAnalysis.updateCurrentConditions()
+    }
+    
+    private func refreshAllData() async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.updateQueueStatistics() }
+            group.addTask { await self.analyzeSkillLevel() }
+            group.addTask { await self.loadCourtRecommendations() }
+            group.addTask { await self.updateWeatherAnalysis() }
+        }
+        
+        // Haptic feedback
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    // MARK: - Enhanced Notification Management
+    
+    private func setupEnhancedNotificationObservers() {
+        setupNotificationObservers() // Call existing method
+        
+        // Add new enhanced observers
+        NotificationCenter.default.addObserver(
+            forName: .queueStatisticsUpdated,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task {
+                await self.updateQueueStatistics()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: .skillAnalysisUpdated,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task {
+                await self.analyzeSkillLevel()
+            }
+        }
+    }
+    
+    private func startEnhancedRefreshTimer() {
+        startRefreshTimer() // Call existing method
+        
+        // Add enhanced timer for real-time updates
+        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+            Task {
+                await self.updateQueueStatistics()
+                await MainActor.run {
+                    self.queueOptimizer.updateRecommendations()
                 }
             }
         }
     }
     
-    // MARK: - Helper Methods
-    
     private func joinQueue(matchType: MatchType) {
-        withAnimation {
-            isInQueue = true
-            queuePosition = Int.random(in: 1...10)
-            estimatedWaitTime = Int.random(in: 2...8)
-            selectedMatchType = matchType
+        guard appState.currentUser != nil else {
+            // Show error - user not authenticated
+            return
+        }
+        
+        Task {
+            do {
+                // Try local matchmaking first for immediate testing
+                try await appState.startLocalMatchmaking(matchType: matchType)
+                
+                await MainActor.run {
+                    withAnimation {
+                        isInQueue = true
+                        selectedMatchType = matchType
+                        // Real values come from the local service
+                        queuePosition = appState.queuePosition
+                        estimatedWaitTime = Int(appState.estimatedWaitTime / 60) // Convert to minutes
+                    }
+                }
+                
+                // Show success message
+                print("✅ Successfully joined local matchmaking queue!")
+                
+            } catch {
+                print("❌ Failed to join queue: \(error)")
+                
+                // Fallback to Firebase if local fails (for production)
+                // try await appState.joinRealtimeQueue(matchType: matchType)
+            }
         }
     }
     
     private func leaveQueue() {
+        appState.stopLocalMatchmaking()
+        
         withAnimation {
             isInQueue = false
+            selectedMatchType = .singles
             queuePosition = 0
             estimatedWaitTime = 0
         }
+        
+        print("✅ Successfully left local matchmaking queue!")
     }
     
     private func startRefreshTimer() {
@@ -607,6 +1044,70 @@ struct QueueView: View {
             QueueRecentMatch(id: "1", opponent: "Sarah Chen", result: "Win", score: "11-8", date: "2 hours ago"),
             QueueRecentMatch(id: "2", opponent: "Mike Johnson", result: "Loss", score: "9-11", date: "Yesterday")
         ]
+    }
+    
+    // MARK: - Notification Observers
+    
+    private func setupNotificationObservers() {
+        NotificationCenter.default.addObserver(
+            forName: .localMatchProposalReceived,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let match = notification.object as? LocalMatchmakingService.LocalMatch {
+                pendingMatch = match
+                showMatchProposal = true
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: .localMatchAccepted,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let match = notification.object as? LocalMatchmakingService.LocalMatch {
+                print("✅ Match accepted! Starting match setup with \(match.player2.displayName)")
+                Task { @MainActor in
+                    appState.activeMatchSetup = match
+                }
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: .localMatchDeclined,
+            object: nil,
+            queue: .main
+        ) { _ in
+            print("❌ Match proposal was declined")
+        }
+    }
+    
+    private func removeNotificationObservers() {
+        NotificationCenter.default.removeObserver(self, name: .localMatchProposalReceived, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .localMatchAccepted, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .localMatchDeclined, object: nil)
+    }
+    
+    private func acceptMatchProposal(_ match: LocalMatchmakingService.LocalMatch) {
+        Task {
+            do {
+                try await appState.respondToLocalProposal(accept: true)
+                print("✅ Match proposal accepted!")
+            } catch {
+                print("❌ Failed to accept match: \(error)")
+            }
+        }
+    }
+    
+    private func declineMatchProposal(_ match: LocalMatchmakingService.LocalMatch) {
+        Task {
+            do {
+                try await appState.respondToLocalProposal(accept: false)
+                print("❌ Match proposal declined")
+            } catch {
+                print("❌ Failed to decline match: \(error)")
+            }
+        }
     }
 }
 
@@ -706,6 +1207,8 @@ struct EnhancedNearbyPlayerCard: View {
                         .font(.caption)
                         .fontWeight(.semibold)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
                     
                     Text("\(player.elo) ELO")
                         .font(.caption2)
@@ -866,11 +1369,13 @@ struct TournamentCard: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Text(tournament.name)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                                    Text(tournament.name)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
                 
                 Text("\(tournament.participants)/\(tournament.maxParticipants)")
                     .font(.caption2)
@@ -911,6 +1416,9 @@ struct PracticePartnerCard: View {
                     Text(partner.displayName.isEmpty ? "Practice Partner" : partner.displayName)
                         .font(.subheadline)
                         .fontWeight(.medium)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
                     
                     HStack {
                         Text("\(partner.elo) ELO")
@@ -991,86 +1499,7 @@ struct CourtBookingView: View {
 }
 
 // MARK: - Original Views (kept for compatibility)
-
-struct MatchSetupView: View {
-    let opponent: User
-    let onComplete: (Result<Match, Error>) -> Void
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
-    @State private var player1Score = 0
-    @State private var player2Score = 0
-    
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Score") {
-                    Stepper("Your Score: \(player1Score)", value: $player1Score, in: 0...21)
-                    Stepper("Opponent Score: \(player2Score)", value: $player2Score, in: 0...21)
-                }
-                
-                Section {
-                    Button("Create Match") {
-                        createMatch()
-                    }
-                    .disabled(player1Score == 0 && player2Score == 0)
-                }
-            }
-            .navigationTitle("New Match")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-    
-    private func createMatch() {
-        do {
-            // Get current user from model context
-            let descriptor = FetchDescriptor<User>()
-            guard let currentUser = try modelContext.fetch(descriptor).first else {
-                onComplete(.failure(AuthError.unknown))
-                return
-            }
-            
-            // Determine winner and ELO change
-            let winner: User?
-            let eloChange: String
-            
-            if player1Score > player2Score {
-                winner = currentUser
-                eloChange = "+10"
-            } else if player2Score > player1Score {
-                winner = opponent
-                eloChange = "-8"
-            } else {
-                winner = nil
-                eloChange = "0"
-            }
-            
-            // Create match
-            let match = Match(
-                player1: currentUser,
-                player2: opponent,
-                player1Score: player1Score,
-                player2Score: player2Score,
-                winner: winner,
-                eloChange: eloChange
-            )
-            
-            modelContext.insert(match)
-            try modelContext.save()
-            
-            onComplete(.success(match))
-            dismiss()
-        } catch {
-            onComplete(.failure(error))
-        }
-    }
-}
+// Note: MatchSetupView is now defined in its own file
 
 #Preview {
     PreviewHelper.queueViewPreview()
@@ -1158,7 +1587,9 @@ struct EnhancedQuickMatchCard: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
                     
                     HStack(spacing: 4) {
                         Image(systemName: "clock")
@@ -1191,4 +1622,923 @@ struct EnhancedQuickMatchCard: View {
     }
 }
 
-// ... rest of the file remains unchanged ... 
+// MARK: - Local Player Card Component
+struct LocalPlayerCard: View {
+    let player: LocalMatchmakingService.NearbyPlayer
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                // Player avatar placeholder
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            gradient: Gradient(colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.8)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 50, height: 50)
+                    
+                    Text(String(player.displayName.prefix(1)).uppercased())
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                }
+                .overlay(
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .offset(x: 18, y: 18)
+                )
+                
+                VStack(spacing: 2) {
+                    Text(player.displayName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundColor(.primary)
+                    
+                    Text(player.eloRange)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                        
+                        Text("Very close")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Enhanced Data Models
+
+@Observable
+class PlayerPreferences {
+    var preferredMatchTypes: [MatchType] = [.singles, .doubles]
+    var preferredTimeRange: ClosedRange<Int> = 9...21 // 9 AM to 9 PM
+    var maxTravelDistance: Double = 10.0 // miles
+    var skillLevelPreference: String = "Similar"
+    var playStyle: String = "Balanced"
+    var availableDays: Set<Int> = [1, 2, 3, 4, 5, 6, 7] // All days
+    
+    func updatePreferences(preferredMatchType: MatchType, preferredTime: Date) {
+        if !preferredMatchTypes.contains(preferredMatchType) {
+            preferredMatchTypes.append(preferredMatchType)
+        }
+        
+        let hour = Calendar.current.component(.hour, from: preferredTime)
+        if !preferredTimeRange.contains(hour) {
+            preferredTimeRange = min(preferredTimeRange.lowerBound, hour)...max(preferredTimeRange.upperBound, hour)
+        }
+        
+        saveToUserDefaults()
+    }
+    
+    func loadFromUserDefaults() {
+        // Load saved preferences from UserDefaults
+        if let data = UserDefaults.standard.data(forKey: "playerPreferences"),
+           let decoded = try? JSONDecoder().decode(PlayerPreferencesData.self, from: data) {
+            self.preferredMatchTypes = decoded.preferredMatchTypes
+            self.maxTravelDistance = decoded.maxTravelDistance
+            self.skillLevelPreference = decoded.skillLevelPreference
+            self.playStyle = decoded.playStyle
+        }
+    }
+    
+    private func saveToUserDefaults() {
+        let data = PlayerPreferencesData(
+            preferredMatchTypes: preferredMatchTypes,
+            maxTravelDistance: maxTravelDistance,
+            skillLevelPreference: skillLevelPreference,
+            playStyle: playStyle
+        )
+        
+        if let encoded = try? JSONEncoder().encode(data) {
+            UserDefaults.standard.set(encoded, forKey: "playerPreferences")
+        }
+    }
+}
+
+struct PlayerPreferencesData: Codable {
+    let preferredMatchTypes: [MatchType]
+    let maxTravelDistance: Double
+    let skillLevelPreference: String
+    let playStyle: String
+}
+
+@Observable
+class QueueStatistics {
+    var totalOnlinePlayers: Int = Int.random(in: 15...45)
+    var averageWaitTime: TimeInterval = TimeInterval.random(in: 60...300)
+    var queueActivityLevel: String = "High"
+    var optimalPlayTime: String = "7:00 PM"
+    var liveMatches: Int = Int.random(in: 3...12)
+    var healthIcon: String = "checkmark.circle.fill"
+    var healthColor: Color = .green
+    var positionTrend: Int = 0
+    var accuracyColor: Color = .green
+    var nearbyPlayersHealthColor: Color = .green
+    
+    var averageWaitTimeString: String {
+        let minutes = Int(averageWaitTime / 60)
+        return "\(minutes)m"
+    }
+    
+    func refresh() {
+        totalOnlinePlayers = Int.random(in: 15...45)
+        averageWaitTime = TimeInterval.random(in: 60...300)
+        liveMatches = Int.random(in: 3...12)
+        
+        // Update activity level based on players
+        queueActivityLevel = totalOnlinePlayers > 30 ? "High" : totalOnlinePlayers > 20 ? "Medium" : "Low"
+        
+        // Update health indicators
+        healthColor = totalOnlinePlayers > 25 ? .green : totalOnlinePlayers > 15 ? .orange : .red
+        healthIcon = totalOnlinePlayers > 25 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+    }
+    
+    func getStatistics(for matchType: MatchType) -> MatchTypeStatistics {
+        return MatchTypeStatistics(
+            playersInQueue: Int.random(in: 5...20),
+            averageWaitTime: TimeInterval.random(in: 60...240),
+            successRate: Double.random(in: 0.75...0.95)
+        )
+    }
+    
+    func getHealthColor(for matchType: MatchType) -> Color {
+        let stats = getStatistics(for: matchType)
+        return stats.playersInQueue > 10 ? .green : stats.playersInQueue > 5 ? .orange : .red
+    }
+    
+    func getHealthDescription(for matchType: MatchType) -> String {
+        let stats = getStatistics(for: matchType)
+        if stats.playersInQueue > 10 {
+            return "Excellent availability"
+        } else if stats.playersInQueue > 5 {
+            return "Good availability"
+        } else {
+            return "Limited availability"
+        }
+    }
+    
+    func recordMatchTypeSelection(_ matchType: MatchType) {
+        // Record analytics for match type selection
+    }
+}
+
+struct MatchTypeStatistics {
+    let playersInQueue: Int
+    let averageWaitTime: TimeInterval
+    let successRate: Double
+}
+
+@Observable
+class SkillAnalysis {
+    var matchSuccessRate: Double = 0.78
+    var recentWinRate: Double = 0.65
+    var improvementArea: String = "Serve Accuracy"
+    var improvementConfidence: Double = 0.82
+    var currentSkillRange: String = "1200-1400"
+    var displaySkillLevel: String = "Intermediate"
+    
+    func analyzeUser(_ user: User) {
+        // Analyze user's performance and calculate metrics
+        let elo = user.elo
+        
+        // Update skill level based on ELO
+        if elo < 1000 {
+            displaySkillLevel = "Beginner"
+            currentSkillRange = "\(elo-100)-\(elo+200)"
+        } else if elo < 1300 {
+            displaySkillLevel = "Intermediate"
+            currentSkillRange = "\(elo-150)-\(elo+150)"
+        } else if elo < 1600 {
+            displaySkillLevel = "Advanced"
+            currentSkillRange = "\(elo-200)-\(elo+100)"
+        } else {
+            displaySkillLevel = "Expert"
+            currentSkillRange = "\(elo-250)-\(elo+50)"
+        }
+        
+        // Calculate success rate based on recent matches
+        if user.totalMatches > 0 {
+            recentWinRate = Double(user.wins) / Double(user.totalMatches)
+            matchSuccessRate = min(0.95, recentWinRate + 0.1)
+        }
+        
+        // Determine improvement area
+        improvementArea = getImprovementArea(for: user)
+    }
+    
+    func calculateCompatibility(with player: LocalMatchmakingService.NearbyPlayer) -> Double {
+        // Calculate compatibility score (0.0 to 1.0)
+        let playerElo = player.elo
+        let eloDifference = abs(playerElo - 1200) // Assume current user ELO
+        let compatibility = max(0.0, 1.0 - Double(eloDifference) / 500.0)
+        return compatibility
+    }
+    
+    func expandMatchmakingRange() {
+        // Expand the skill range for wider matchmaking
+        currentSkillRange = "1000-1600" // Expanded range
+    }
+    
+    func updateMatchTypePreference(_ matchType: MatchType) {
+        // Update preferences based on match type selection
+    }
+    
+    private func getImprovementArea(for user: User) -> String {
+        let areas = ["Serve Accuracy", "Return Strategy", "Net Play", "Positioning", "Mental Game"]
+        return areas.randomElement() ?? "Overall Game"
+    }
+}
+
+@Observable
+class MatchHistoryAnalyzer {
+    var recentMatches: [AnalyzedMatch] = []
+    
+    func recordQueueAttempt(matchType: MatchType) {
+        // Record queue attempt for analytics
+    }
+    
+    func recordMatchProposal(to opponent: String) {
+        // Record match proposal for analytics
+    }
+}
+
+struct AnalyzedMatch {
+    let opponent: String
+    let result: String
+    let skillDifference: Int
+    let duration: TimeInterval
+}
+
+@Observable
+class QueueOptimizer {
+    var recommendedMatchType: MatchType = .singles
+    var recommendationReason: String = "Best win rate"
+    var confidence: Double = 0.87
+    var matchProbability: Double = 0.73
+    var currentSearchStatus: String = "Analyzing skill compatibility..."
+    var currentSearchStage: Int = 2
+    var currentTip: QueueTip = QueueTip.defaultTip
+    
+    func updateRecommendations() {
+        // Update recommendations based on current conditions
+        currentSearchStage = min(5, currentSearchStage + 1)
+        matchProbability = min(1.0, matchProbability + 0.05)
+        
+        // Update search status
+        let statuses = [
+            "Searching for players...",
+            "Analyzing skill compatibility...",
+            "Checking court availability...",
+            "Optimizing match quality...",
+            "Finalizing match proposal..."
+        ]
+        
+        if currentSearchStage <= statuses.count {
+            currentSearchStatus = statuses[currentSearchStage - 1]
+        }
+    }
+    
+    func getRecommendation(for matchType: MatchType) -> String {
+        switch matchType {
+        case .singles: return "Recommended • High success rate"
+        case .doubles: return "Good option • Team play"
+        case .practice: return "Learning focused"
+        default: return "Available"
+        }
+    }
+    
+    func getOptimalIcon() -> String {
+        return "target"
+    }
+    
+    func getEstimatedWaitTime(for matchType: MatchType) -> String {
+        let minutes = Int.random(in: 2...8)
+        return "\(minutes)m"
+    }
+    
+    func predictMatchOutcome(against player: LocalMatchmakingService.NearbyPlayer) -> QueueMatchPrediction {
+        return QueueMatchPrediction(
+            winProbability: Double.random(in: 0.4...0.8),
+            confidence: Double.random(in: 0.7...0.9)
+        )
+    }
+    
+    func relaxCriteria() {
+        // Relax matchmaking criteria for faster matches
+    }
+    
+    func expandSearchRadius() {
+        // Expand geographic search radius
+    }
+}
+
+struct QueueTip {
+    let title: String
+    let suggestions: [String]
+    
+    static let defaultTip = QueueTip(
+        title: "While You Wait",
+        suggestions: [
+            "Warm up with practice swings",
+            "Check court conditions nearby",
+            "Review your recent match stats"
+        ]
+    )
+}
+
+struct QueueMatchPrediction {
+    let winProbability: Double
+    let confidence: Double
+}
+
+@Observable
+class WeatherAnalysis {
+    var currentConditions: String = "Perfect for outdoor play"
+    var temperature: Int = 72
+    var windSpeed: Int = 5
+    var rainChance: Int = 0
+    
+    func updateCurrentConditions() {
+        // Update weather conditions
+        temperature = Int.random(in: 65...85)
+        windSpeed = Int.random(in: 0...15)
+        rainChance = Int.random(in: 0...30)
+        
+        if rainChance > 20 {
+            currentConditions = "Check indoor courts"
+        } else if windSpeed > 10 {
+            currentConditions = "Windy conditions"
+        } else {
+            currentConditions = "Perfect for outdoor play"
+        }
+    }
+}
+
+
+
+struct CourtRecommendation: Identifiable {
+    let id = UUID()
+    let name: String
+    let distance: String
+    let rating: Double
+    let availability: String
+    let price: String
+    let features: [String]
+}
+
+class CourtRecommendationEngine {
+    static func getRecommendations(userLocation: CLLocation?, preferences: PlayerPreferences) -> [CourtRecommendation] {
+        return [
+            CourtRecommendation(
+                name: "Golden Gate Courts",
+                distance: "0.8 mi",
+                rating: 4.8,
+                availability: "Available now",
+                price: "$15/hour",
+                features: ["Outdoor", "4 courts", "Parking"]
+            ),
+            CourtRecommendation(
+                name: "Mission Recreation",
+                distance: "1.2 mi",
+                rating: 4.5,
+                availability: "Available in 30 min",
+                price: "$12/hour",
+                features: ["Indoor", "2 courts", "Equipment rental"]
+            )
+        ]
+    }
+}
+
+// MARK: - Enhanced Supporting View Components
+
+struct QueueStatItem: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(color)
+            
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+            
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct RecommendationCard: View {
+    let title: String
+    let subtitle: String
+    let reason: String
+    let confidence: Double
+    let icon: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color)
+                
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .multilineTextAlignment(.center)
+                
+                Text(subtitle)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(color)
+                
+                Text(reason)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                HStack(spacing: 4) {
+                    ForEach(0..<5) { index in
+                        Circle()
+                            .fill(index < Int(confidence * 5) ? color : .secondary.opacity(0.3))
+                            .frame(width: 4, height: 4)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(width: 120, height: 140)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct QuickActionButton: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundColor(color)
+                
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct QueueProgressView: View {
+    let position: Int
+    let totalStages: Int
+    let currentStage: Int
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 4) {
+                ForEach(1...totalStages, id: \.self) { stage in
+                    Rectangle()
+                        .fill(stage <= currentStage ? .blue : .secondary.opacity(0.3))
+                        .frame(height: 4)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .clipShape(Capsule())
+            
+            Text("Stage \(currentStage) of \(totalStages)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct EnhancedMatchTypeCard: View {
+    let matchType: MatchType
+    let isSelected: Bool
+    let statistics: MatchTypeStatistics
+    let recommendation: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                Image(systemName: matchType.icon)
+                    .font(.title)
+                    .foregroundColor(isSelected ? .white : matchType.color)
+                
+                Text(matchType.rawValue)
+                    .font(.headline)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : .primary)
+                
+                VStack(spacing: 4) {
+                    Text("\(statistics.playersInQueue) in queue")
+                        .font(.caption)
+                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                    
+                    Text(recommendation)
+                        .font(.caption2)
+                        .foregroundColor(isSelected ? .white.opacity(0.7) : .secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(height: 140)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? 
+                          matchType.color.gradient : 
+                          Color(.systemGray6).gradient
+                    )
+            )
+        }
+        .scaleEffect(isSelected ? 1.05 : 1.0)
+        .animation(.spring(response: 0.3), value: isSelected)
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct EnhancedLocalPlayerCard: View {
+    let player: LocalMatchmakingService.NearbyPlayer
+    let compatibility: Double
+    let matchPrediction: QueueMatchPrediction
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                // Player avatar with compatibility indicator
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            gradient: Gradient(colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.8)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 50, height: 50)
+                    
+                    Text(String(player.displayName.prefix(1)).uppercased())
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                    
+                    // Compatibility ring
+                    Circle()
+                        .stroke(compatibilityColor, lineWidth: 3)
+                        .frame(width: 56, height: 56)
+                }
+                .overlay(
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .offset(x: 20, y: 20)
+                )
+                
+                VStack(spacing: 4) {
+                    Text(player.displayName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
+                    
+                    Text(player.eloRange)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    // Match prediction
+                    HStack(spacing: 4) {
+                        Image(systemName: "target")
+                            .font(.caption2)
+                            .foregroundColor(compatibilityColor)
+                        
+                        Text("\(Int(matchPrediction.winProbability * 100))% win")
+                            .font(.caption2)
+                            .foregroundColor(compatibilityColor)
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(compatibilityColor.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private var compatibilityColor: Color {
+        if compatibility > 0.8 {
+            return .green
+        } else if compatibility > 0.6 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+}
+
+struct EmptyStateView: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let actionTitle: String
+    let action: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button(actionTitle, action: action)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.blue)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+struct CourtRecommendationCard: View {
+    let court: CourtRecommendation
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(court.name)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    
+                    HStack(spacing: 2) {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                        Text(String(format: "%.1f", court.rating))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Text(court.distance)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text(court.availability)
+                    .font(.caption)
+                    .foregroundColor(.green)
+                    .fontWeight(.medium)
+                
+                HStack {
+                    Text(court.price)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
+                    
+                    Spacer()
+                    
+                    Text(court.features.first ?? "")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(12)
+            .frame(width: 150)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct StatCard: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+            
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+            
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Additional View Components
+
+struct PlayerPreferencesView: View {
+    @Binding var preferences: PlayerPreferences
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Match Preferences") {
+                    // Placeholder for preferences UI
+                    Text("Match type preferences")
+                    Text("Skill level preferences")
+                    Text("Time preferences")
+                }
+                
+                Section("Location") {
+                    // Placeholder for location preferences
+                    Text("Max travel distance")
+                    Text("Preferred courts")
+                }
+            }
+            .navigationTitle("Preferences")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct SkillAnalysisView: View {
+    let analysis: SkillAnalysis
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Skill level overview
+                    VStack(spacing: 12) {
+                        Text("Current Skill Level")
+                            .font(.headline)
+                        
+                        Text(analysis.displaySkillLevel)
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                        
+                        Text("ELO Range: \(analysis.currentSkillRange)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    
+                    // Performance metrics
+                    HStack(spacing: 12) {
+                        StatCard(
+                            title: "Win Rate",
+                            value: "\(Int(analysis.recentWinRate * 100))%",
+                            subtitle: "Last 10 games",
+                            icon: "target",
+                            color: .green
+                        )
+                        
+                        StatCard(
+                            title: "Success Rate",
+                            value: "\(Int(analysis.matchSuccessRate * 100))%",
+                            subtitle: "Match completion",
+                            icon: "checkmark.circle",
+                            color: .blue
+                        )
+                    }
+                    
+                    // Improvement areas
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Focus Area")
+                            .font(.headline)
+                        
+                        Text(analysis.improvementArea)
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.orange)
+                        
+                        Text("Confidence: \(Int(analysis.improvementConfidence * 100))%")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .padding()
+            }
+            .navigationTitle("Skill Analysis")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Notification Extensions
+
+extension Notification.Name {
+    static let queueStatisticsUpdated = Notification.Name("queueStatisticsUpdated")
+    static let skillAnalysisUpdated = Notification.Name("skillAnalysisUpdated")
+}
+

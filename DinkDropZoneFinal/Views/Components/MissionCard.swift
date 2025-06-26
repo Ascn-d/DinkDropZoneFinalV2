@@ -33,10 +33,16 @@ struct MissionCard: View {
                     Text(mission.type.title)
                         .font(DS.Font.headline)
                         .foregroundColor(DS.Color.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
                     
                     Text(mission.type.description)
                         .font(DS.Font.caption)
                         .foregroundColor(DS.Color.secondary)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 
                 Spacer()
@@ -129,6 +135,9 @@ struct CompactMissionCard: View {
                 Text(mission.type.rawValue)
                     .font(DS.Font.caption)
                     .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
                 
                 // Progress bar
                 HStack(spacing: 4) {
@@ -306,11 +315,15 @@ struct ModernMissionCard: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(DS.Color.primary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
                     
                     Text(mission.type.description)
                         .font(.system(size: 11))
                         .foregroundColor(DS.Color.secondary)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 
                 Spacer()
@@ -368,6 +381,9 @@ struct ModernRecentMatchCard: View {
                         Text("vs \(match.opponent(for: appState.currentUser!))")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(DS.Color.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .fixedSize(horizontal: false, vertical: true)
                         
                         Spacer()
                         

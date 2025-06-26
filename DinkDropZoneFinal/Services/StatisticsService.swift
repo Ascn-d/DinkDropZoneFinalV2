@@ -62,7 +62,7 @@ actor StatisticsService {
         []
     }
 
-    func predictMatchOutcome(user: User, opponent: User) async -> MatchPrediction? {
+    func predictMatchOutcome(user: User, opponent: User) async -> StatisticsMatchPrediction? {
         nil
     }
 }

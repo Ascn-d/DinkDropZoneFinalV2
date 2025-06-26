@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct HomeTabView: View {
     @State private var selectedTab = 0
@@ -88,6 +89,12 @@ struct HomeTabView: View {
         }
         .onAppear {
             setupTabBarAppearance()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToQueue)) { _ in
+            print("🔥 HomeTabView: Received navigateToQueue notification - switching to tab 1")
+            withAnimation {
+                selectedTab = 1 // Switch to Queue tab
+            }
         }
     }
     

@@ -263,17 +263,17 @@ struct ProfileEditView: View {
             // Handle profile image upload if needed
             if let selectedImage = selectedImage {
                 do {
-                    // Upload image to Firebase Storage and get the download URL
-                    let updatedUser = try await FirebaseService.shared.updateProfileImageComplete(user, newImage: selectedImage)
+                    // Store image locally using Base64 (free tier alternative)
+                    let updatedUser = try await FirebaseService.shared.updateProfileImageLocal(user, newImage: selectedImage)
                     
                     // Update local user object with new image URL
                     user.profileImageURL = updatedUser.profileImageURL
                     
-                    LoggingService.shared.log("Profile image uploaded successfully")
+                    LoggingService.shared.log("Profile image stored locally successfully")
                 } catch {
                     await MainActor.run {
                         isLoading = false
-                        alertMessage = "Failed to upload profile image: \(error.localizedDescription)"
+                        alertMessage = "Failed to store profile image: \(error.localizedDescription)"
                         showingAlert = true
                     }
                     return

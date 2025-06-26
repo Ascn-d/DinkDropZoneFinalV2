@@ -1,0 +1,272 @@
+rules_version = '2';
+
+// Enhanced Firestore Rules for DinkDropZone Alpha Testing
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(resource) {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+    
+    function isParticipant(resource, participantField) {
+      return isSignedIn() && request.auth.uid in resource.data[participantField];
+    }
+    
+    function hasValidAuthData() {
+      return isSignedIn() && 
+             request.auth.uid != null && 
+             request.auth.uid is string;
+    }
+    
+    // Users collection - enhanced security
+    match /users/{userId} {
+      // Read: own profile and other authenticated users (for matchmaking)
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId || 
+        true // Allow reading other user profiles for matchmaking
+      );
+      
+      // Write: only own profile with data validation
+      allow create: if hasValidAuthData() && 
+                   request.auth.uid == userId &&
+                   validateUserData();
+      
+      allow update: if hasValidAuthData() && 
+                   request.auth.uid == userId &&
+                   validateUserUpdateData();
+      
+      allow delete: if request.auth.uid == userId;
+      
+      function validateUserData() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['displayName', 'email', 'elo', 'totalMatches']) &&
+               data.displayName is string &&
+               data.displayName.size() > 0 &&
+               data.email is string &&
+               data.elo is int &&
+               data.elo >= 0 &&
+               data.totalMatches is int &&
+               data.totalMatches >= 0;
+      }
+      
+      function validateUserUpdateData() {
+        let data = request.resource.data;
+        return data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'bio', 'location', 'skillLevel', 'playStyle',
+          'favoriteShot', 'availability', 'profileImageURL', 'elo', 'xp',
+          'totalMatches', 'wins', 'losses', 'winStreak', 'longestWinStreak',
+          'totalPointsScored', 'totalPointsConceded', 'lat', 'lon', 'coins',
+          'level', 'lastActive', 'fcmToken', 'achievements', 'monthlyStats'
+        ]);
+      }
+    }
+    
+    // Real-time matchmaking queue
+    match /matchmaking_queue/{queueId} {
+      // Read: authenticated users can see queue entries
+      allow read: if isSignedIn();
+      
+      // Create: users can create their own queue entries
+      allow create: if hasValidAuthData() && 
+                   request.auth.uid == request.resource.data.userId &&
+                   validateQueueEntry();
+      
+      // Update: users can update their own queue entries
+      allow update: if hasValidAuthData() && 
+                   request.auth.uid == resource.data.userId &&
+                   validateQueueUpdate();
+      
+      // Delete: users can delete their own queue entries
+      allow delete: if hasValidAuthData() && 
+                   request.auth.uid == resource.data.userId;
+      
+      function validateQueueEntry() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['userId', 'userDisplayName', 'userElo', 'matchType', 'joinTime']) &&
+               data.userId is string &&
+               data.userDisplayName is string &&
+               data.userElo is int &&
+               data.matchType is string &&
+               data.joinTime is timestamp &&
+               data.status == 'waiting';
+      }
+      
+      function validateQueueUpdate() {
+        // Only allow updating status and limited fields
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      }
+    }
+    
+    // Match proposals
+    match /match_proposals/{proposalId} {
+      // Read: participants can read proposals they're part of
+      allow read: if isSignedIn() && 
+                 isParticipant(resource, 'playerIds');
+      
+      // Create: authenticated users can create proposals (typically cloud functions)
+      allow create: if hasValidAuthData() && validateMatchProposal();
+      
+      // Update: participants can update with their responses
+      allow update: if isSignedIn() && 
+                   isParticipant(resource, 'playerIds') &&
+                   validateProposalResponse();
+      
+      function validateMatchProposal() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['playerIds', 'playerNames', 'matchType', 'createdAt', 'expiresAt']) &&
+               data.playerIds is list &&
+               data.playerIds.size() >= 2 &&
+               data.playerNames is list &&
+               data.matchType is string &&
+               data.createdAt is timestamp &&
+               data.expiresAt is timestamp;
+      }
+      
+      function validateProposalResponse() {
+        let userId = request.auth.uid;
+        let newResponses = request.resource.data.responses;
+        let oldResponses = resource.data.responses;
+        
+        // User can only add/update their own response
+        return newResponses.diff(oldResponses).affectedKeys().hasOnly([userId]) &&
+               newResponses[userId] in ['accepted', 'declined', 'timeout'];
+      }
+    }
+    
+    // Matches - game records
+    match /matches/{matchId} {
+      // Read: participants can read their matches
+      allow read: if isSignedIn() && 
+                 isParticipant(resource, 'playerIds');
+      
+      // Create: participants can create match records
+      allow create: if hasValidAuthData() && 
+                   isParticipant(request.resource, 'playerIds') &&
+                   validateMatchData();
+      
+      // Update: participants can update match results
+      allow update: if hasValidAuthData() && 
+                   isParticipant(resource, 'playerIds') &&
+                   validateMatchUpdate();
+      
+      function validateMatchData() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['playerIds', 'matchType', 'createdAt']) &&
+               data.playerIds is list &&
+               data.playerIds.size() >= 2 &&
+               data.matchType is string &&
+               data.createdAt is timestamp;
+      }
+      
+      function validateMatchUpdate() {
+        // Allow updating match results and status
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'scores', 'winner', 'completedAt', 'duration'
+        ]);
+      }
+    }
+    
+    // Alpha testing analytics
+    match /matchmaking_analytics/{analyticsId} {
+      // Read: users can read their own analytics
+      allow read: if isSignedIn() && 
+                 request.auth.uid == resource.data.userId;
+      
+      // Create: users can create their own analytics
+      allow create: if hasValidAuthData() && 
+                   request.auth.uid == request.resource.data.userId;
+      
+      // Update: users can update their own analytics
+      allow update: if hasValidAuthData() && 
+                   request.auth.uid == resource.data.userId;
+    }
+    
+    // Alpha testing sessions
+    match /alpha_testing_sessions/{sessionId} {
+      // Read: users can read their own sessions
+      allow read: if isSignedIn() && 
+                 request.auth.uid == resource.data.userId;
+      
+      // Create: users can create their own sessions
+      allow create: if hasValidAuthData() && 
+                   request.auth.uid == request.resource.data.userId;
+      
+      // Update: users can update their own sessions
+      allow update: if hasValidAuthData() && 
+                   request.auth.uid == resource.data.userId;
+    }
+    
+    // System metrics (read-only for users, write for functions)
+    match /system_metrics/{metricId} {
+      allow read: if isSignedIn();
+      // Write access only for Cloud Functions (no client writes)
+    }
+    
+    // Courts - public read
+    match /courts/{courtId} {
+      allow read: if isSignedIn();
+      // Court data managed by admins only
+    }
+    
+    // Tournaments - enhanced access control
+    match /tournaments/{tournamentId} {
+      allow read: if isSignedIn();
+      
+      // Create: authenticated users can create tournaments
+      allow create: if hasValidAuthData() && validateTournamentData();
+      
+      // Update: creator and participants can update
+      allow update: if hasValidAuthData() && (
+        request.auth.uid == resource.data.creatorId ||
+        isParticipant(resource, 'participantIds')
+      );
+      
+      function validateTournamentData() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['name', 'creatorId', 'startTime', 'maxParticipants']) &&
+               data.name is string &&
+               data.creatorId == request.auth.uid &&
+               data.maxParticipants is int &&
+               data.maxParticipants > 0;
+      }
+    }
+    
+    // Friend requests
+    match /friend_requests/{requestId} {
+      // Read: sender and recipient can read
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.senderId ||
+        request.auth.uid == resource.data.recipientId
+      );
+      
+      // Create: authenticated users can send friend requests
+      allow create: if hasValidAuthData() && 
+                   request.auth.uid == request.resource.data.senderId;
+      
+      // Update: recipient can respond to requests
+      allow update: if hasValidAuthData() && 
+                   request.auth.uid == resource.data.recipientId;
+      
+      // Delete: sender and recipient can delete
+      allow delete: if hasValidAuthData() && (
+        request.auth.uid == resource.data.senderId ||
+        request.auth.uid == resource.data.recipientId
+      );
+    }
+    
+    // Push notification tokens
+    match /user_tokens/{userId} {
+      allow read, write: if hasValidAuthData() && request.auth.uid == userId;
+    }
+    
+    // Rate limiting collection (for preventing spam)
+    match /rate_limits/{userId} {
+      allow read, write: if hasValidAuthData() && request.auth.uid == userId;
+    }
+  }
+}

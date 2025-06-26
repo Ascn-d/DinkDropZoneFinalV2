@@ -34,6 +34,10 @@ final class AppState: ObservableObject {
     private var networkService: NetworkService?
     var locationService: UserLocationService?
     var nearbyPlayersService: NearbyPlayersService?
+    var realtimeMatchmakingService: RealtimeMatchmakingService?
+    var pushNotificationService: PushNotificationService?
+    var alphaTestingService: AlphaTestingService?
+    var localMatchmakingService: LocalMatchmakingService?
 
     // Firestore listener handle
     private var userListenerHandle: FirebaseService.ListenerHandle?
@@ -96,18 +100,18 @@ final class AppState: ObservableObject {
         persistUserToLocal(updatedUser)
     }
     
-    /// Updates the user's profile image
+    /// Updates the user's profile image using local storage (free tier)
     func updateProfileImage(_ image: UIImage) async throws {
         guard let user = currentUser else { 
             print("AppState: No current user found for profile image update")
             throw FirebaseService.FirebaseError.invalidUser 
         }
         
-        print("AppState: Starting profile image update for user: \(user.id)")
+        print("AppState: Starting local profile image update for user: \(user.id)")
         
         do {
-            let updatedUser = try await FirebaseService.shared.updateProfileImageComplete(user, newImage: image)
-            print("AppState: Profile image update successful")
+            let updatedUser = try await FirebaseService.shared.updateProfileImageLocal(user, newImage: image)
+            print("AppState: Local profile image update successful")
             
             await MainActor.run {
                 self.currentUser = updatedUser
@@ -115,7 +119,7 @@ final class AppState: ObservableObject {
                 print("AppState: Current user updated with new profile image URL")
             }
         } catch {
-            print("AppState: Profile image update failed: \(error)")
+            print("AppState: Local profile image update failed: \(error)")
             throw error
         }
     }
@@ -146,6 +150,7 @@ final class AppState: ObservableObject {
     @Published var estimatedWaitTime: TimeInterval = 0
     @Published var currentQueueType: MatchType?
     @Published var matchProposal: MatchProposal?
+    @Published var activeMatchSetup: LocalMatchmakingService.LocalMatch?
     
     // MARK: - Statistics & Performance
     
@@ -205,6 +210,14 @@ final class AppState: ObservableObject {
         self.locationService = UserLocationService()
         self.nearbyPlayersService = NearbyPlayersService(locationService: self.locationService!)
         
+        // Initialize real-time services for alpha testing
+        self.realtimeMatchmakingService = RealtimeMatchmakingService()
+        self.pushNotificationService = PushNotificationService.shared
+        self.alphaTestingService = AlphaTestingService.shared
+        
+        // Initialize local matchmaking for immediate testing
+        self.localMatchmakingService = LocalMatchmakingService()
+        
         // Initialize achievement system
         self.achievementTracker = AdvancedAchievementTracker()
         self.achievementNotificationManager = AchievementNotificationManager()
@@ -219,12 +232,19 @@ final class AppState: ObservableObject {
                 let descriptor = FetchDescriptor<User>()
                 if let cached = try? modelContext.fetch(descriptor).first(where: { $0.id == uidUUID }) {
                     currentUser = cached
+                    
+                    // Start alpha testing session
+                    alphaTestingService?.startTestingSession(user: cached)
+                    alphaTestingService?.setCrashlyticsUserId(firebaseUser.uid, displayName: cached.displayName)
                 }
             }
             subscribeToUserUpdates(uid: firebaseUser.uid)
         }
 
-        Task { await loadInitialData() }
+        Task { 
+            await loadInitialData()
+            await setupPushNotifications()
+        }
     }
 
     private func subscribeToUserUpdates(uid: String) {
@@ -755,6 +775,151 @@ final class AppState: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Alpha Testing Setup
+    
+    func setupAlphaTesting() async {
+        guard let user = currentUser else { return }
+        
+        // Start alpha testing session
+        alphaTestingService?.startTestingSession(user: user)
+        
+        if let uid = Auth.auth().currentUser?.uid {
+            alphaTestingService?.setCrashlyticsUserId(uid, displayName: user.displayName)
+        }
+        
+        // Setup push notifications
+        await setupPushNotifications()
+        
+        // Enhanced monitoring for alpha is enabled by default
+        
+        LoggingService.shared.log("Alpha testing setup completed for user: \(user.displayName)")
+    }
+    
+    private func setupPushNotifications() async {
+        guard let pushService = pushNotificationService else { return }
+        
+        // Request permissions
+        do {
+            try await pushService.requestPermissions()
+            LoggingService.shared.log("Push notifications enabled for alpha testing")
+        } catch {
+            LoggingService.shared.log("Failed to enable push notifications: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Real-time Matchmaking Integration
+    
+    func joinRealtimeQueue(matchType: MatchType) async throws {
+        guard let user = currentUser,
+              let realtimeService = realtimeMatchmakingService else {
+            throw MatchmakingError.notAuthenticated
+        }
+        
+        // Record matchmaking attempt for analytics
+        alphaTestingService?.recordUserAction(
+            action: "join_realtime_queue", 
+            parameters: ["matchType": matchType.rawValue]
+        )
+        
+        try await realtimeService.joinQueue(userId: user.id.uuidString, matchType: matchType)
+        
+        // Update local state
+        isInQueue = true
+        currentQueueType = matchType
+        
+        LoggingService.shared.log("User joined real-time matchmaking queue: \(matchType.rawValue)")
+    }
+    
+    func leaveRealtimeQueue() async throws {
+        guard let realtimeService = realtimeMatchmakingService else { return }
+        
+        try await realtimeService.leaveQueue()
+        
+        // Update local state
+        isInQueue = false
+        currentQueueType = nil
+        queuePosition = 0
+        estimatedWaitTime = 0
+        
+        LoggingService.shared.log("User left real-time matchmaking queue")
+    }
+    
+    func respondToRealtimeMatchProposal(_ response: String) async throws {
+        guard let realtimeService = realtimeMatchmakingService else {
+            throw MatchmakingError.noActiveProposal
+        }
+        
+        // Record response for analytics
+        alphaTestingService?.recordUserAction(
+            action: "match_proposal_response", 
+            parameters: ["response": response]
+        )
+        
+        try await realtimeService.respondToProposal(response)
+        
+        LoggingService.shared.log("User responded to match proposal: \(response)")
+    }
+    
+    // MARK: - Local Matchmaking for Testing
+    
+    /// Start local matchmaking (for immediate testing without Firebase)
+    func startLocalMatchmaking(matchType: MatchType) async throws {
+        guard let user = currentUser,
+              let localService = localMatchmakingService else {
+            throw MatchmakingError.notAuthenticated
+        }
+        
+        try await localService.startMatchmaking(user: user, matchType: matchType)
+        
+        // Update local state to match the local service
+        isInQueue = localService.isInQueue
+        queuePosition = localService.queuePosition
+        estimatedWaitTime = localService.estimatedWaitTime
+        currentQueueType = matchType
+        
+        LoggingService.shared.log("Started local matchmaking for \(matchType.rawValue)")
+    }
+    
+    /// Stop local matchmaking
+    func stopLocalMatchmaking() {
+        localMatchmakingService?.stopMatchmaking()
+        
+        // Update local state
+        isInQueue = false
+        currentQueueType = nil
+        queuePosition = 0
+        estimatedWaitTime = 0
+        
+        LoggingService.shared.log("Stopped local matchmaking")
+    }
+    
+    /// Propose match to a nearby player (local)
+    func proposeLocalMatch(to player: LocalMatchmakingService.NearbyPlayer) async throws {
+        guard let localService = localMatchmakingService else {
+            throw MatchmakingError.notAuthenticated
+        }
+        
+        try await localService.proposeMatch(to: player)
+        LoggingService.shared.log("Proposed local match to \(player.displayName)")
+    }
+    
+    /// Respond to local match proposal
+    func respondToLocalProposal(accept: Bool) async throws {
+        guard let localService = localMatchmakingService else {
+            throw MatchmakingError.noActiveQueue
+        }
+        
+        try await localService.respondToProposal(accept: accept)
+        
+        if accept {
+            // Update state for accepted match
+            isInQueue = false
+            LoggingService.shared.log("Accepted local match proposal")
+        } else {
+            LoggingService.shared.log("Declined local match proposal")
+        }
+    }
 }
 
 // MARK: - Supporting Types
@@ -925,4 +1090,5 @@ extension Notification.Name {
     static let showLevelUpNotification = Notification.Name("showLevelUpNotification")
     static let showMissionCompleteNotification = Notification.Name("showMissionCompleteNotification")
     static let trophyUnlocked = Notification.Name("trophyUnlocked")
+    static let navigateToQueue = Notification.Name("navigateToQueue")
 } 

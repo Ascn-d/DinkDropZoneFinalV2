@@ -89,6 +89,35 @@ service cloud.firestore {
     match /courts/{courtId} {
       allow read: if request.auth != null;
     }
+    
+    // Matchmaking queue - users can read/write their own entries
+    match /matchmaking_queue/{queueId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
+    // Match proposals - participants can read/write
+    match /match_proposals/{proposalId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.playerIds;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && request.auth.uid in resource.data.playerIds;
+    }
+    
+    // Alpha testing sessions - users can write their own data, admins can read all
+    match /alpha_testing_sessions/{sessionId} {
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
+    // Alpha testing metrics - same as sessions
+    match /alpha_testing_metrics/{metricId} {
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
   }
 }
 EOF
@@ -178,6 +207,62 @@ cat > firestore.indexes.json << 'EOF'
         },
         {
           "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "matchmaking_queue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "joinTime",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "matchmaking_queue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "matchType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "joinTime",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "match_proposals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "playerIds",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "alpha_testing_metrics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "timestamp",
           "order": "DESCENDING"
         }
       ]

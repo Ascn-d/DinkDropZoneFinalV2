@@ -69,7 +69,7 @@ struct MissionsView: View {
         )
         .padding()
         .dsCard()
-        .padding(.horizontal)
+        .padding(.horizontal, DS.Layout.horizontalPadding)
     }
     
     private var dailyMissions: some View {
@@ -123,6 +123,9 @@ struct MissionsView: View {
                 .font(DS.Font.body)
                 .foregroundColor(DS.Color.secondary)
                 .multilineTextAlignment(.center)
+                .lineLimit(nil)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal)
         }
         .frame(maxWidth: .infinity)
@@ -221,15 +224,15 @@ struct XPProgressCard: View {
             
             // Stats
             HStack {
-                StatItem(title: "Total XP", value: "\(xpManager.totalXPEarned)")
+                MissionStatItem(title: "Total XP", value: "\(xpManager.totalXPEarned)")
                 
                 Spacer()
                 
-                StatItem(title: "Today", value: "\(xpManager.dailyStats.xpEarned) XP")
+                MissionStatItem(title: "Today", value: "\(xpManager.dailyStats.xpEarned) XP")
                 
                 Spacer()
                 
-                StatItem(title: "Progress", value: "\(Int(xpManager.getProgressToNextLevel() * 100))%")
+                MissionStatItem(title: "Progress", value: "\(Int(xpManager.getProgressToNextLevel() * 100))%")
             }
         }
         .padding(20)
@@ -279,7 +282,7 @@ struct SectionHeader: View {
 
 // MARK: - Stat Item
 
-struct StatItem: View {
+struct MissionStatItem: View {
     let title: String
     let value: String
     

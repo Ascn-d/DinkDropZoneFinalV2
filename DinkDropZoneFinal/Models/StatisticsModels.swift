@@ -104,7 +104,7 @@ struct MatchAnalysis {
     let insights: [String]
 }
 
-struct MatchPrediction {
+struct StatisticsMatchPrediction {
     let userWinProbability: Double
     let expectedEloChange: Int
     let confidenceLevel: Double

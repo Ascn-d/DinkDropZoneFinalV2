@@ -192,73 +192,7 @@ struct EnhancedStatsCard: View {
     }
 }
 
-/// Compact stats card for grid layouts
-struct CompactStatsCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-    let showRing: Bool
-    let ringProgress: Double
-    
-    init(
-        title: String,
-        value: String,
-        icon: String,
-        color: Color,
-        showRing: Bool = false,
-        ringProgress: Double = 0.0
-    ) {
-        self.title = title
-        self.value = value
-        self.icon = icon
-        self.color = color
-        self.showRing = showRing
-        self.ringProgress = ringProgress
-    }
-    
-    var body: some View {
-        DSModernCard(style: .minimal) {
-            VStack(spacing: 8) {
-                // Icon with optional progress ring
-                ZStack {
-                    if showRing {
-                        DSProgressRing(
-                            progress: ringProgress,
-                            lineWidth: 4,
-                            size: 40,
-                            color: color
-                        )
-                    }
-                    
-                    Circle()
-                        .fill(color.opacity(showRing ? 0.0 : 0.15))
-                        .frame(width: showRing ? 32 : 40, height: showRing ? 32 : 40)
-                    
-                    Image(systemName: icon)
-                        .font(.system(size: showRing ? 14 : 16, weight: .medium))
-                        .foregroundColor(color)
-                }
-                
-                // Content
-                VStack(spacing: 2) {
-                    Text(value)
-                        .font(DS.Font.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(DS.Color.primary)
-                    
-                    Text(title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(DS.Color.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 90)
-        }
-    }
-}
+// CompactStatsCard moved to PremiumComponents.swift to avoid duplicate definitions
 
 /// Large featured stats card
 struct FeaturedStatsCard: View {

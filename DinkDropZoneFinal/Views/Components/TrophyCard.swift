@@ -338,22 +338,46 @@ struct SparkleView: View {
     let delay: Double
     let color: Color
     @State private var animate = false
+    @State private var rotation: Double = 0
     
     var body: some View {
-        Image(systemName: "sparkle")
-            .font(.system(size: 12, weight: .bold))
-            .foregroundColor(color)
-            .scaleEffect(animate ? 1.2 : 0.8)
-            .opacity(animate ? 1.0 : 0.3)
-            .animation(
-                .easeInOut(duration: 1.5)
-                .repeatForever(autoreverses: true)
-                .delay(delay),
-                value: animate
-            )
-            .onAppear {
-                animate = true
+        ZStack {
+            // Main sparkle
+            Image(systemName: "sparkle")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [color, color.opacity(0.7), .white.opacity(0.9)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .scaleEffect(animate ? 1.3 : 0.6)
+                .opacity(animate ? 1.0 : 0.2)
+                .rotationEffect(.degrees(rotation))
+            
+            // Outer glow
+            Circle()
+                .fill(color.opacity(0.4))
+                .frame(width: 6, height: 6)
+                .blur(radius: animate ? 4 : 1)
+                .scaleEffect(animate ? 1.5 : 0.5)
+                .opacity(animate ? 0.8 : 0.1)
+        }
+        .animation(
+            .easeInOut(duration: 1.8)
+            .repeatForever(autoreverses: true)
+            .delay(delay),
+            value: animate
+        )
+        .onAppear {
+            animate = true
+            
+            // Continuous rotation
+            withAnimation(.linear(duration: 3.0).repeatForever(autoreverses: false)) {
+                rotation = 360
             }
+        }
     }
 }
 

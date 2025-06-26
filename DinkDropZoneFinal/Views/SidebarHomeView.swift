@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // ─────────────────────────────────────────────────────────────
 // Root container
@@ -64,6 +65,16 @@ struct SidebarHomeView: View {
                                 color: DS.Color.primary
                             )
                         }
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateToQueue)) { _ in
+                print("🔥 SidebarHomeView: Received navigateToQueue notification - switching to queue")
+                withAnimation {
+                    selected = .queue
+                    // Close sidebar on phones after navigation
+                    if hSize == .compact {
+                        showSidebar = false
                     }
                 }
             }

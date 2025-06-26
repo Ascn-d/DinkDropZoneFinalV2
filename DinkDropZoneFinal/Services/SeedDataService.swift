@@ -157,7 +157,7 @@ struct SeedDataService {
         let sampleEmails = ["alice@example.com", "bob@example.com", "carol@example.com"]
         
         for email in sampleEmails {
-            let stats = DetailedUserStats(
+            let _ = DetailedUserStats(
                 totalMatches: Int.random(in: 10...100),
                 wins: Int.random(in: 5...50),
                 losses: Int.random(in: 5...50),
