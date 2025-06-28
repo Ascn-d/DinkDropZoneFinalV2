@@ -89,6 +89,7 @@ private func SelectedScreen(_ item: SidebarItem) -> some View {
     switch item {
     case .dashboard:    DashboardView()
     case .queue:        QueueView()
+    case .tournaments:  TournamentManagerView()
     case .social:       SocialView()
     case .courts:       CourtView()
     case .chat:         ChatView()
@@ -209,6 +210,7 @@ struct ModernSidebarItemView: View {
 enum SidebarItem: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
     case queue = "Play Hub"
+    case tournaments = "Tournaments"
     case social = "Social"
     case courts = "Courts"
     case chat = "Chat"
@@ -227,6 +229,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard: return "chart.bar.fill"
         case .queue: return "timer.circle.fill"
+        case .tournaments: return "trophy.circle"
         case .social: return "person.3.fill"
         case .courts: return "sportscourt"
         case .chat: return "message.fill"
@@ -243,6 +246,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard: return .blue
         case .queue: return .green
+        case .tournaments: return .brown
         case .social: return .purple
         case .courts: return .mint
         case .chat: return .orange

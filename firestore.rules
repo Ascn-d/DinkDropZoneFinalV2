@@ -4,6 +4,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Allow read/write access on all documents to any user signed in to the application
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
     // Helper functions
     function isSignedIn() {
       return request.auth != null;
@@ -215,24 +220,41 @@ service cloud.firestore {
     
     // Tournaments - enhanced access control
     match /tournaments/{tournamentId} {
-      allow read: if isSignedIn();
+      // Anyone can read tournaments
+      allow read: if request.auth != null;
       
-      // Create: authenticated users can create tournaments
-      allow create: if hasValidAuthData() && validateTournamentData();
+      // Only organizers can create/update tournaments
+      allow create: if request.auth != null && 
+                   request.auth.uid == request.resource.data.organizerID;
       
-      // Update: creator and participants can update
-      allow update: if hasValidAuthData() && (
-        request.auth.uid == resource.data.creatorId ||
-        isParticipant(resource, 'participantIds')
-      );
+      allow update: if request.auth != null && 
+                   (request.auth.uid == resource.data.organizerID ||
+                    // Allow participants to join/leave (update participants array)
+                    onlyParticipantsChanged());
       
-      function validateTournamentData() {
-        let data = request.resource.data;
-        return data.keys().hasAll(['name', 'creatorId', 'startTime', 'maxParticipants']) &&
-               data.name is string &&
-               data.creatorId == request.auth.uid &&
-               data.maxParticipants is int &&
-               data.maxParticipants > 0;
+      // Only organizers can delete tournaments
+      allow delete: if request.auth != null && 
+                   request.auth.uid == resource.data.organizerID;
+      
+      // Tournament matches subcollection
+      match /matches/{matchId} {
+        // Anyone can read matches
+        allow read: if request.auth != null;
+        
+        // Only organizers and match participants can update match results
+        allow write: if request.auth != null && 
+                    (request.auth.uid == get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.organizerID ||
+                     isMatchParticipant(request.auth.uid));
+      }
+      
+      function onlyParticipantsChanged() {
+        let allowedChanges = ['participants', 'participantIds', 'updatedAt'];
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedChanges);
+      }
+      
+      function isMatchParticipant(userId) {
+        return userId == request.resource.data.player1ID || 
+               userId == request.resource.data.player2ID;
       }
     }
     

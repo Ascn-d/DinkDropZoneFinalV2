@@ -77,16 +77,34 @@ struct ProfileView: View {
                             achievementsContent
                         }
                         
-                        // Recent Activity Section
+                        // Activity Section
                         VStack(spacing: 16) {
                             DSPremiumSectionHeader(
-                                title: "Recent Activity",
-                                subtitle: "Your latest matches",
-                                icon: "clock.arrow.circlepath",
-                                action: userMatches.isEmpty ? nil : { showingMatchHistory = true }
+                                title: "My Activity",
+                                subtitle: "View your tournaments and matches",
+                                icon: "figure.pickleball"
                             )
                             
-                            recentActivityContent
+                            VStack(spacing: 12) {
+                                NavigationLink(destination: MyTournamentsView()) {
+                                    ProfileNavigationCard(
+                                        title: "My Tournaments",
+                                        subtitle: "View your joined and created tournaments",
+                                        icon: "trophy.fill",
+                                        color: .orange
+                                    )
+                                }
+                                
+                                Button(action: { showingMatchHistory = true }) {
+                                    ProfileNavigationCard(
+                                        title: "Match History",
+                                        subtitle: "Review your past match results",
+                                        icon: "clock.arrow.circlepath",
+                                        color: .blue
+                                    )
+                                }
+                                .disabled(userMatches.isEmpty)
+                            }
                         }
                         
                         // Detailed Stats Section
@@ -1011,6 +1029,46 @@ struct CompactAchievementBadge: View {
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(achievement.tier.color.opacity(0.3), lineWidth: 1)
                 )
+        )
+    }
+}
+
+// MARK: - Navigation Card
+struct ProfileNavigationCard: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+                .frame(width: 30)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(DS.Font.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(DS.Color.primary)
+                
+                Text(subtitle)
+                    .font(DS.Font.caption)
+                    .foregroundColor(DS.Color.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .foregroundColor(DS.Color.secondary)
+        }
+        .padding()
+        .background(DS.Color.surface)
+        .cornerRadius(DS.Layout.cornerRadius)
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
+                .stroke(DS.Color.divider.opacity(0.5), lineWidth: 1)
         )
     }
 }

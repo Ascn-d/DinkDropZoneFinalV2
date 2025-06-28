@@ -1,479 +1,714 @@
 import Foundation
 import SwiftData
+import Combine
+import SwiftUI
+
+// MARK: - Enhanced Tournament Service for Large Tournaments
 
 @MainActor
-@Observable
-final class TournamentService {
+class TournamentService: ObservableObject {
+    let firebaseService: FirebaseService
+    private let bracketEngine = BracketEngine()
+    private var cancellables = Set<AnyCancellable>()
     
-    private var modelContext: ModelContext
+    // MARK: - Performance Configuration
     
-    // Tournament state
-    var activeTournaments: [Tournament] = []
-    var upcomingTournaments: [Tournament] = []
-    var completedTournaments: [Tournament] = []
-    var userTournaments: [Tournament] = []
-    
-    init(modelContext: ModelContext) {
-        self.modelContext = modelContext
-        loadTournaments()
-        generateSampleTournaments()
+    private struct ServiceConfiguration {
+        static let maxConcurrentOperations = 5
+        static let batchSize = 20
+        static let cacheTimeout: TimeInterval = 300 // 5 minutes
+        static let maxTournamentSize = 128
     }
     
-    // MARK: - Tournament Management
+    // MARK: - Cache Management
     
+    private var tournamentCache: [String: (tournament: Tournament, timestamp: Date)] = [:]
+    private var isPerformingBulkOperation = false
+    
+    // MARK: - Published Properties
+    
+    @Published var tournaments: [Tournament] = []
+    @Published var isLoading = false
+    @Published var error: TournamentError?
+    @Published var operationProgress: Double = 0.0
+    
+    init(firebaseService: FirebaseService) {
+        self.firebaseService = firebaseService
+        setupPerformanceMonitoring()
+    }
+    
+    // MARK: - Enhanced Tournament Management
+    
+    /// Creates a tournament with comprehensive validation and error handling
     func createTournament(
         name: String,
-        description: String,
-        location: String,
-        startDate: Date,
-        endDate: Date,
-        maxParticipants: Int,
-        entryFee: Double,
-        format: TournamentFormat,
-        skillLevel: String
-    ) -> Tournament {
+        description: String = "",
+        type: String = "Double Elimination",
+        format: String = "Doubles",
+        skillLevel: String = "Intermediate",
+        maxParticipants: Int = 32,
+        startDate: Date = Date(),
+        organizerID: String,
+        organizerName: String,
+        venueName: String = "",
+        venueAddress: String = ""
+    ) async throws -> Tournament {
+        
+        // Validate tournament parameters
+        try validateTournamentCreation(
+            name: name,
+            maxParticipants: maxParticipants,
+            startDate: startDate
+        )
+        
         let tournament = Tournament(
             name: name,
             description: description,
-            location: location,
-            startDate: startDate,
-            endDate: endDate,
-            maxParticipants: maxParticipants,
-            entryFee: entryFee,
+            type: type,
             format: format,
-            skillLevel: skillLevel
+            skillLevel: skillLevel,
+            maxParticipants: maxParticipants,
+            startDate: startDate,
+            organizerID: organizerID,
+            organizerName: organizerName,
+            venueName: venueName,
+            venueAddress: venueAddress
         )
         
-        modelContext.insert(tournament)
-        return tournament
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let tournamentId = try await firebaseService.createTournament(tournament)
+            
+            // Cache the tournament
+            cacheTournament(tournament)
+            
+            // Add to local tournaments if not already present
+            if !tournaments.contains(where: { $0.id == tournament.id }) {
+                tournaments.append(tournament)
+            }
+            
+            print("✅ Tournament created successfully: \(name) (ID: \(tournamentId))")
+            return tournament
+            
+        } catch {
+            self.error = TournamentError.creationFailed(error.localizedDescription)
+            throw error
+        }
     }
     
-    func joinTournament(_ tournament: Tournament, player: User) throws {
-        guard tournament.status == .open else {
-            throw TournamentError.tournamentNotOpen
+    /// Enhanced tournament registration with validation and batch processing
+    func registerForTournament(_ tournament: Tournament, participant: TournamentParticipant) async throws {
+        try validateRegistration(tournament: tournament, participant: participant)
+        
+        var updatedTournament = tournament
+        
+        // Check for existing registration
+        if updatedTournament.participants.contains(where: { $0.userID == participant.userID }) {
+            throw TournamentError.alreadyRegistered
+        }
+        
+        // Handle partner pairing for doubles tournaments
+        if let partnerID = participant.partnerID {
+            // Update existing partner's record to link them together
+            if let partnerIndex = updatedTournament.participants.firstIndex(where: { $0.userID == partnerID }) {
+                updatedTournament.participants[partnerIndex].partnerID = participant.userID
+                updatedTournament.participants[partnerIndex].partnerName = participant.displayName
+                updatedTournament.participants[partnerIndex].teamName = participant.teamName
+            }
+        }
+        
+        // Add participant
+        updatedTournament.participants.append(participant)
+        
+        // Update tournament status if needed
+        updateTournamentStatus(&updatedTournament)
+        
+        try await updateTournament(updatedTournament)
+        
+        // Update local tournaments list
+        if let index = tournaments.firstIndex(where: { $0.id == tournament.id }) {
+            tournaments[index] = updatedTournament
+        }
+        
+        print("✅ Registered \(participant.displayName) for tournament: \(tournament.name)")
+    }
+    
+    /// Batch registration for multiple participants (useful for large tournaments)
+    func batchRegisterParticipants(_ tournament: Tournament, participants: [TournamentParticipant]) async throws {
+        guard !isPerformingBulkOperation else {
+            throw TournamentError.operationInProgress
+        }
+        
+        isPerformingBulkOperation = true
+        defer { isPerformingBulkOperation = false }
+        
+        var updatedTournament = tournament
+        var successfulRegistrations: [TournamentParticipant] = []
+        var failedRegistrations: [(TournamentParticipant, Error)] = []
+        
+        let batches = participants.chunked(into: ServiceConfiguration.batchSize)
+        
+        for (batchIndex, batch) in batches.enumerated() {
+            operationProgress = Double(batchIndex) / Double(batches.count)
+            
+            for participant in batch {
+                do {
+                    try validateRegistration(tournament: updatedTournament, participant: participant)
+                    
+                    if !updatedTournament.participants.contains(where: { $0.userID == participant.userID }) {
+                        updatedTournament.participants.append(participant)
+                        successfulRegistrations.append(participant)
+                    }
+                } catch {
+                    failedRegistrations.append((participant, error))
+                }
+            }
+            
+            // Small delay to prevent overwhelming the system
+            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+        }
+        
+        if !successfulRegistrations.isEmpty {
+            updateTournamentStatus(&updatedTournament)
+            try await updateTournament(updatedTournament)
+        }
+        
+        operationProgress = 1.0
+        
+        print("✅ Batch registration completed: \(successfulRegistrations.count) successful, \(failedRegistrations.count) failed")
+        
+        if !failedRegistrations.isEmpty {
+            let errorMessage = "Some registrations failed: \(failedRegistrations.count) participants"
+            throw TournamentError.batchOperationPartialFailure(errorMessage)
+        }
+    }
+    
+    /// Enhanced tournament starting with comprehensive validation
+    func startTournament(_ tournament: Tournament) async throws -> Tournament {
+        try validateTournamentStart(tournament)
+        
+        var updatedTournament = tournament
+        updatedTournament.status = "In Progress"
+        
+        // Generate bracket with performance monitoring
+        let startTime = Date()
+        let matches = bracketEngine.generateBracket(for: updatedTournament)
+        let generationTime = Date().timeIntervalSince(startTime)
+        
+        print("🏁 Bracket generated in \(String(format: "%.2f", generationTime))s for \(updatedTournament.participants.count) participants")
+        
+        updatedTournament.matches = matches
+        
+        try await updateTournament(updatedTournament)
+        return updatedTournament
+    }
+    
+    /// Performance-optimized tournament retrieval with caching
+    func getTournament(id: String) async throws -> Tournament {
+        // Check cache first
+        if let cachedData = tournamentCache[id],
+           Date().timeIntervalSince(cachedData.timestamp) < ServiceConfiguration.cacheTimeout {
+            return cachedData.tournament
+        }
+        
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let tournament = try await firebaseService.getTournament(id: id)
+            cacheTournament(tournament)
+            return tournament
+        } catch {
+            self.error = TournamentError.fetchFailed(error.localizedDescription)
+            throw error
+        }
+    }
+    
+    /// Enhanced match completion with validation and progression
+    func completeMatch(
+        tournamentId: String,
+        match: TournamentMatch,
+        winnerID: String,
+        loserID: String,
+        score: String
+    ) async throws {
+        
+        try validateMatchCompletion(match: match, winnerID: winnerID, loserID: loserID, score: score)
+        
+        var tournament = try await getTournament(id: tournamentId)
+        
+        // Update match result directly in tournament
+        if let matchIndex = tournament.matches.firstIndex(where: { $0.id == match.id }) {
+            tournament.matches[matchIndex].winnerID = winnerID
+            tournament.matches[matchIndex].loserID = loserID
+            tournament.matches[matchIndex].finalScore = score
+            tournament.matches[matchIndex].status = "Completed"
+        }
+        
+        // Update participant records
+        if let winnerIndex = tournament.participants.firstIndex(where: { $0.userID == winnerID }) {
+            tournament.participants[winnerIndex].wins += 1
+        }
+        if let loserIndex = tournament.participants.firstIndex(where: { $0.userID == loserID }) {
+            tournament.participants[loserIndex].losses += 1
+        }
+        
+        // Check for tournament completion
+        if tournament.status == "Completed" {
+            await finalizeCompletedTournament(&tournament)
+        }
+        
+        try await updateTournament(tournament)
+        print("✅ Match completed: \(match.displayName) - Winner: \(winnerID)")
+    }
+    
+    // MARK: - Validation Methods
+    
+    private func validateTournamentCreation(name: String, maxParticipants: Int, startDate: Date) throws {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw TournamentError.invalidName
+        }
+        
+        guard maxParticipants >= 4 && maxParticipants <= ServiceConfiguration.maxTournamentSize else {
+            throw TournamentError.invalidParticipantCount(maxParticipants)
+        }
+        
+        guard startDate > Date() else {
+            throw TournamentError.invalidStartDate
+        }
+    }
+    
+    private func validateRegistration(tournament: Tournament, participant: TournamentParticipant) throws {
+        guard tournament.isRegistrationOpen else {
+            throw TournamentError.registrationClosed
         }
         
         guard tournament.participants.count < tournament.maxParticipants else {
             throw TournamentError.tournamentFull
         }
         
-        guard !tournament.participants.contains(where: { $0.id == player.id }) else {
-            throw TournamentError.alreadyJoined
-        }
-        
-        tournament.participants.append(player)
-        
-        if tournament.participants.count == tournament.maxParticipants {
-            tournament.status = .inProgress
-            generateBracket(for: tournament)
+        guard !tournament.participants.contains(where: { $0.userID == participant.userID }) else {
+            throw TournamentError.alreadyRegistered
         }
     }
     
-    func leaveTournament(_ tournament: Tournament, player: User) {
-        tournament.participants.removeAll { $0.id == player.id }
-    }
-    
-    // MARK: - Match Management
-    
-    func recordMatchResult(
-        tournament: Tournament,
-        match: TournamentMatch,
-        winner: User,
-        score: String
-    ) throws {
-        guard tournament.status == .inProgress else {
-            throw TournamentError.tournamentNotInProgress
+    private func validateTournamentStart(_ tournament: Tournament) throws {
+        guard tournament.status == "Registration Closed" || tournament.status == "Registration Open" else {
+            throw TournamentError.invalidStatus("Cannot start tournament with status: \(tournament.status)")
         }
         
-        guard match.status == .scheduled else {
+        let registeredCount = tournament.participants.filter { $0.status == "Registered" }.count
+        guard registeredCount >= 4 else {
+            throw TournamentError.insufficientParticipants(registeredCount)
+        }
+        
+        // Check for power of 2 for elimination tournaments
+        if tournament.type.contains("Elimination") {
+            let powerOfTwo = nextPowerOfTwo(registeredCount)
+            if registeredCount < powerOfTwo / 2 {
+                print("⚠️ Tournament will have \(powerOfTwo - registeredCount) bye matches")
+            }
+        }
+    }
+    
+    private func validateMatchCompletion(match: TournamentMatch, winnerID: String, loserID: String, score: String) throws {
+        guard match.status != "Completed" else {
             throw TournamentError.matchAlreadyCompleted
         }
         
-        match.winner = winner
-        match.score = score
-        match.status = .completed
-        match.completedAt = Date()
+        guard !winnerID.isEmpty && !loserID.isEmpty else {
+            throw TournamentError.invalidMatchResult
+        }
         
-        // Update tournament progress
-        if let nextMatch = findNextMatch(for: match, in: tournament) {
-            nextMatch.status = .scheduled
-            if match.round == 1 {
-                nextMatch.player1 = winner
+        guard winnerID != loserID else {
+            throw TournamentError.invalidMatchResult
+        }
+        
+        guard [match.player1ID, match.player2ID].contains(winnerID) &&
+              [match.player1ID, match.player2ID].contains(loserID) else {
+            throw TournamentError.invalidMatchResult
+        }
+    }
+    
+    // MARK: - Cache Management
+    
+    private func cacheTournament(_ tournament: Tournament) {
+        tournamentCache[tournament.id.uuidString] = (tournament, Date())
+        
+        // Clean old cache entries
+        let cutoffTime = Date().addingTimeInterval(-ServiceConfiguration.cacheTimeout)
+        tournamentCache = tournamentCache.filter { $0.value.timestamp > cutoffTime }
+    }
+    
+    private func clearCache() {
+        tournamentCache.removeAll()
+    }
+    
+    // MARK: - Tournament Status Management
+    
+    private func updateTournamentStatus(_ tournament: inout Tournament) {
+        let registeredCount = tournament.participants.filter { $0.status == "Registered" }.count
+        
+        if registeredCount >= tournament.maxParticipants {
+            tournament.status = "Registration Closed"
+        } else if registeredCount >= 4 && tournament.status == "Upcoming" {
+            tournament.status = "Registration Open"
+        }
+    }
+    
+    private func finalizeCompletedTournament(_ tournament: inout Tournament) async {
+        print("🏆 Tournament completed: \(tournament.name)")
+        
+        // Update final placements
+        let champion = tournament.participants.first { $0.placement == 1 }
+        if let champion = champion {
+            print("👑 Champion: \(champion.displayName)")
+        }
+        
+        // Clear from cache since it's now completed
+        tournamentCache.removeValue(forKey: tournament.id.uuidString)
+    }
+    
+    // MARK: - Performance Monitoring
+    
+    private func setupPerformanceMonitoring() {
+        // Monitor memory usage and performance for large tournaments
+        Timer.publish(every: 30, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.performCacheMaintenance()
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func performCacheMaintenance() {
+        let cutoffTime = Date().addingTimeInterval(-ServiceConfiguration.cacheTimeout)
+        let oldCount = tournamentCache.count
+        tournamentCache = tournamentCache.filter { $0.value.timestamp > cutoffTime }
+        
+        if tournamentCache.count < oldCount {
+            print("🧹 Cache cleaned: removed \(oldCount - tournamentCache.count) expired entries")
+        }
+    }
+    
+    // MARK: - Legacy Support
+    
+    func getAllTournaments() -> [Tournament] {
+        return tournaments
+    }
+    
+    /// Loads all tournaments from Firebase and updates local cache
+    func loadTournamentsFromFirebase() async throws {
+        let fetchedTournaments = try await firebaseService.getAllTournaments()
+        
+        await MainActor.run {
+            tournaments = fetchedTournaments
+            
+            // Cache all tournaments
+            for tournament in fetchedTournaments {
+                cacheTournament(tournament)
+            }
+        }
+        
+        print("✅ Loaded \(fetchedTournaments.count) tournaments from Firebase")
+    }
+    
+    func updateTournament(_ tournament: Tournament) async throws {
+        try await firebaseService.updateTournament(tournament)
+        
+        // Update local cache
+        cacheTournament(tournament)
+        
+        // Update local tournaments array
+        if let index = tournaments.firstIndex(where: { $0.id == tournament.id }) {
+            tournaments[index] = tournament
+        }
+    }
+    
+    // MARK: - Additional Methods for AppState Compatibility
+    
+    /// Join tournament with a User object (convenience method)
+    func joinTournament(_ tournament: Tournament, user: User) async throws {
+        let participant = TournamentParticipant(
+            userID: user.id.uuidString,
+            displayName: user.displayName,
+            elo: user.elo
+        )
+        try await registerForTournament(tournament, participant: participant)
+    }
+    
+    /// Start tournament if it has enough participants (convenience method)
+    func startTournamentIfReady(_ tournament: Tournament) async throws {
+        let registeredCount = tournament.participants.filter { $0.status == "Registered" }.count
+        if registeredCount >= 4 && tournament.status != "In Progress" {
+            _ = try await startTournament(tournament)
+        }
+    }
+    
+    /// Submit match result (convenience method)
+    func submitMatchResult(
+        match: TournamentMatch,
+        winnerID: String,
+        loserID: String,
+        score: String,
+        tournament: Tournament
+    ) async throws {
+        try await completeMatch(
+            tournamentId: tournament.id.uuidString,
+            match: match,
+            winnerID: winnerID,
+            loserID: loserID,
+            score: score
+        )
+    }
+    
+    /// Get ready matches for a tournament (convenience method)
+    func getReadyMatches(in tournament: Tournament) -> [TournamentMatch] {
+        return tournament.matches.filter { $0.status == "Ready" }
+    }
+    
+    /// Get user tournament status (convenience method)
+    func getUserTournamentStatus(user: User, tournament: Tournament) -> UserTournamentStatus {
+        let userID = user.id.uuidString
+        
+        // Check if user is registered
+        let isRegistered = tournament.participants.contains { $0.userID == userID }
+        
+        if !isRegistered {
+            return .notRegistered
+        }
+        
+        // Check if user has an active match
+        let userMatches = tournament.matches.filter { match in
+            (match.player1ID == userID || match.player2ID == userID) && match.status != "Completed"
+        }
+        
+        if let activeMatch = userMatches.first(where: { $0.status == "Ready" }) {
+            return .hasMatch(activeMatch)
+        }
+        
+        // Check tournament status
+        switch tournament.status {
+        case "Completed":
+            let participant = tournament.participants.first { $0.userID == userID }
+            let placement = participant?.placement ?? 999
+            if placement == 1 {
+                return .finished(placement: placement)
             } else {
-                nextMatch.player2 = winner
+                return .eliminated(placement: placement)
             }
-        } else {
-            // Tournament is complete
-            tournament.status = .completed
-            tournament.winner = winner
+        case "In Progress":
+            return .active
+        default:
+            return .registered(isPartnered: false)
         }
     }
     
-    // MARK: - Bracket Management
-    
-    private func generateBracket(for tournament: Tournament) {
-        let participants = tournament.participants.shuffled()
-        let rounds = calculateRounds(participantCount: participants.count)
+    /// Leave tournament (convenience method)
+    func leaveTournament(_ tournament: Tournament, user: User) async throws {
+        var updatedTournament = tournament
+        let userID = user.id.uuidString
         
-        // Create first round matches
-        for i in stride(from: 0, to: participants.count - 1, by: 2) {
-            let match = TournamentMatch(
-                tournament: tournament,
-                round: 1,
-                player1: participants[i],
-                player2: i + 1 < participants.count ? participants[i + 1] : nil
-            )
-            tournament.matches.append(match)
-        }
-        
-        // Create subsequent round matches
-        for round in 2...rounds {
-            let matchesInRound = tournament.matches.filter { $0.round == round - 1 }.count / 2
-            for _ in 0..<matchesInRound {
-                let match = TournamentMatch(
-                    tournament: tournament,
-                    round: round,
-                    player1: nil,
-                    player2: nil
-                )
-                tournament.matches.append(match)
-            }
-        }
-    }
-    
-    private func calculateRounds(participantCount: Int) -> Int {
-        var count = participantCount
-        var rounds = 0
-        while count > 1 {
-            count = (count + 1) / 2
-            rounds += 1
-        }
-        return rounds
-    }
-    
-    private func findNextMatch(for match: TournamentMatch, in tournament: Tournament) -> TournamentMatch? {
-        let nextRound = match.round + 1
-        let matchIndex = tournament.matches.firstIndex { $0.id == match.id } ?? 0
-        let nextMatchIndex = matchIndex / 2
-        
-        return tournament.matches.first { $0.round == nextRound && $0.id == tournament.matches[nextMatchIndex].id }
-    }
-    
-    // MARK: - Prize System
-    
-    private func awardPrizes(for tournament: Tournament) {
-        guard let winner = tournament.winner else { return }
-        
-        let prizes = calculatePrizes(for: tournament)
-        winner.addXP(prizes.xp)
-        winner.addCoins(prizes.coins)
-        
-        LoggingService.shared.log("Awarded prizes to \(winner.displayName): \(prizes.xp) XP, \(prizes.coins) coins")
-    }
-    
-    private func calculatePrizes(for tournament: Tournament) -> (xp: Int, coins: Int) {
-        let baseXP = 100
-        let baseCoins = tournament.prizePool
-        
-        let multiplier = tournament.format == .singleElimination ? 2.0 : 1.0
-        
-        return (
-            xp: Int(Double(baseXP) * multiplier),
-            coins: Int(Double(baseCoins) * multiplier)
-        )
-    }
-    
-    // MARK: - Helper Methods
-    
-    private func calculateMatchTime(tournament: Tournament, round: Int, matchIndex: Int) -> Date {
-        let baseTime = tournament.actualStartDate ?? tournament.startDate
-        let roundInterval: TimeInterval = 3600 // 1 hour between rounds
-        let matchInterval: TimeInterval = 900 // 15 minutes between matches
-        
-        return baseTime.addingTimeInterval(
-            TimeInterval(round - 1) * roundInterval +
-            TimeInterval(matchIndex) * matchInterval
-        )
-    }
-    
-    // MARK: - Data Loading
-    
-    private func loadTournaments() {
-        let descriptor = FetchDescriptor<Tournament>()
-        if let tournaments = try? modelContext.fetch(descriptor) {
-            for tournament in tournaments {
-                switch tournament.status {
-                case .open, .registering:
-                    upcomingTournaments.append(tournament)
-                case .inProgress:
-                    activeTournaments.append(tournament)
-                case .completed:
-                    completedTournaments.append(tournament)
-                case .cancelled:
-                    completedTournaments.append(tournament)
+        // Find and remove participant
+        if let participantIndex = updatedTournament.participants.firstIndex(where: { $0.userID == userID }) {
+            let participant = updatedTournament.participants[participantIndex]
+            
+            // If they have a partner, unlink the partner
+            if let partnerID = participant.partnerID {
+                if let partnerIndex = updatedTournament.participants.firstIndex(where: { $0.userID == partnerID }) {
+                    updatedTournament.participants[partnerIndex].partnerID = nil
+                    updatedTournament.participants[partnerIndex].partnerName = nil
+                    updatedTournament.participants[partnerIndex].teamName = nil
                 }
             }
+            
+            updatedTournament.participants.remove(at: participantIndex)
+        }
+        
+        // Update tournament status if needed
+        updateTournamentStatus(&updatedTournament)
+        
+        try await updateTournament(updatedTournament)
+        
+        // Update local tournaments list
+        if let index = tournaments.firstIndex(where: { $0.id == tournament.id }) {
+            tournaments[index] = updatedTournament
+        }
+        
+        print("✅ User \(user.displayName) left tournament: \(tournament.name)")
+    }
+    
+    /// Start tournament immediately (organizer only)
+    func startTournamentNow(_ tournament: Tournament, organizerID: String) async throws -> Tournament {
+        // Verify organizer permission
+        guard tournament.organizerID == organizerID else {
+            throw TournamentError.invalidStatus("Only the tournament organizer can start the tournament")
+        }
+        
+        // Validate minimum participants
+        let registeredCount = tournament.participants.filter { $0.status == "Registered" }.count
+        guard registeredCount >= 4 else {
+            throw TournamentError.insufficientParticipants(registeredCount)
+        }
+        
+        var updatedTournament = tournament
+        updatedTournament.status = "In Progress"
+        
+        // Generate bracket
+        let matches = bracketEngine.generateBracket(for: updatedTournament)
+        updatedTournament.matches = matches
+        
+        try await updateTournament(updatedTournament)
+        
+        // Update local tournaments list
+        if let index = tournaments.firstIndex(where: { $0.id == tournament.id }) {
+            tournaments[index] = updatedTournament
+        }
+        
+        print("🏁 Tournament started: \(tournament.name) with \(registeredCount) participants")
+        return updatedTournament
+    }
+    
+    /// Get tournament matches (convenience method for TournamentLiveMonitorView)
+    func getTournamentMatches(tournamentId: String) async throws -> [TournamentMatch] {
+        let tournament = try await getTournament(id: tournamentId)
+        return tournament.matches
+    }
+    
+    /// Get tournament participants (convenience method for TournamentLiveMonitorView)
+    func getTournamentParticipants(tournamentId: String) async throws -> [TournamentParticipant] {
+        let tournament = try await getTournament(id: tournamentId)
+        return tournament.participants
+    }
+    
+    // MARK: - Utility Methods
+    
+    private func nextPowerOfTwo(_ n: Int) -> Int {
+        guard n > 0 else { return 1 }
+        var power = 1
+        while power < n {
+            power *= 2
+        }
+        return power
+    }
+}
+
+// MARK: - Supporting Types
+
+enum UserTournamentStatus: Equatable {
+    case notRegistered
+    case registered(isPartnered: Bool)
+    case waitingForMatch
+    case hasMatch(TournamentMatch)
+    case eliminated(placement: Int)
+    case finished(placement: Int)
+    case active
+    
+    var description: String {
+        switch self {
+        case .notRegistered: return "Not Registered"
+        case .registered(let isPartnered): return isPartnered ? "Registered" : "Need Partner"
+        case .waitingForMatch: return "Waiting"
+        case .hasMatch: return "Match Ready"
+        case .eliminated: return "Eliminated"
+        case .finished: return "Finished"
+        case .active: return "Active"
         }
     }
-    
-    private func generateSampleTournaments() {
-        // Only generate sample data if no tournaments exist
-        guard activeTournaments.isEmpty && upcomingTournaments.isEmpty else { return }
-        
-        _ = createTournament(
-            name: "Summer Championship",
-            description: "Join us for the biggest pickleball tournament of the summer!",
-            location: "City Sports Complex",
-            startDate: Date(),
-            endDate: Calendar.current.date(byAdding: .day, value: 7, to: Date())!,
-            maxParticipants: 32,
-            entryFee: 50.0,
-            format: .singleElimination,
-            skillLevel: "Intermediate"
-        )
-        
-        _ = createTournament(
-            name: "Weekly Tournament",
-            description: "Stay active this winter with indoor pickleball!",
-            location: "Sports Center",
-            startDate: Date(),
-            endDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
-            maxParticipants: 16,
-            entryFee: 35.0,
-            format: .doubleElimination,
-            skillLevel: "Advanced"
-        )
-        
-        LoggingService.shared.log("Generated sample tournaments")
-    }
-}
 
-// MARK: - Tournament Models
-
-@Model
-final class Tournament {
-    var id: String
-    var name: String
-    var tournamentDescription: String
-    var location: String
-    var startDate: Date
-    var endDate: Date
-    var maxParticipants: Int
-    var entryFee: Double
-    var format: TournamentFormat
-    var skillLevel: String
-    var status: TournamentStatus
-    var participants: [User]
-    var matches: [TournamentMatch]
-    var winner: User?
-    var actualStartDate: Date?
-    var createdAt: Date
-    var updatedAt: Date
-    
-
-    
-    init(
-        id: String = UUID().uuidString,
-        name: String,
-        description: String,
-        location: String,
-        startDate: Date,
-        endDate: Date,
-        maxParticipants: Int,
-        entryFee: Double,
-        format: TournamentFormat,
-        skillLevel: String,
-        status: TournamentStatus = .open,
-        participants: [User] = [],
-        matches: [TournamentMatch] = [],
-        winner: User? = nil,
-        actualStartDate: Date? = nil,
-        createdAt: Date = Date(),
-        updatedAt: Date = Date()
-    ) {
-        self.id = id
-        self.name = name
-        self.tournamentDescription = description
-        self.location = location
-        self.startDate = startDate
-        self.endDate = endDate
-        self.maxParticipants = maxParticipants
-        self.entryFee = entryFee
-        self.format = format
-        self.skillLevel = skillLevel
-        self.status = status
-        self.participants = participants
-        self.matches = matches
-        self.winner = winner
-        self.actualStartDate = actualStartDate
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-    }
-    
-
-    
-    var minParticipants: Int {
-        switch format {
-        case .weekly: return 4
-        case .singleElimination: return 8
-        case .doubleElimination: return 2
-        case .roundRobin: return 4
+    var color: Color {
+        switch self {
+        case .notRegistered: return .gray
+        case .registered(let isPartnered): return isPartnered ? .green : .orange
+        case .waitingForMatch: return .blue
+        case .hasMatch: return .purple
+        case .eliminated: return .red
+        case .finished: return .yellow
+        case .active: return .green
         }
     }
-    
-    var isReadyToStart: Bool {
-        participants.count >= minParticipants && status == .open
-    }
-    
-    var prizePool: Int {
-        switch format {
-        case .weekly: return 400
-        case .singleElimination: return 1000
-        case .doubleElimination: return 1000
-        case .roundRobin: return 0
-        }
-    }
-    
-    func addParticipant(_ user: User) {
-        guard canJoin(user: user) else { return }
-        participants.append(user)
-    }
-    
-    func removeParticipant(_ user: User) {
-        participants.removeAll { $0.id == user.id }
-    }
-    
-    func canJoin(user: User) -> Bool {
-        guard status == .open || status == .registering else { return false }
-        guard !participants.contains(where: { $0.id == user.id }) else { return false }
-        return participants.count < maxParticipants
-    }
 }
 
-@Model
-final class TournamentMatch {
-    var id: String
-    var tournament: Tournament
-    var round: Int
-    var player1: User?
-    var player2: User?
-    var winner: User?
-    var score: String?
-    var status: TournamentMatchStatus
-    var scheduledDate: Date?
-    var completedAt: Date?
-    
+// MARK: - Tournament Error Types
 
-    
-    init(
-        id: String = UUID().uuidString,
-        tournament: Tournament,
-        round: Int,
-        player1: User? = nil,
-        player2: User? = nil,
-        winner: User? = nil,
-        score: String? = nil,
-        status: TournamentMatchStatus = .scheduled,
-        scheduledDate: Date? = nil,
-        completedAt: Date? = nil
-    ) {
-        self.id = id
-        self.tournament = tournament
-        self.round = round
-        self.player1 = player1
-        self.player2 = player2
-        self.winner = winner
-        self.score = score
-        self.status = status
-        self.scheduledDate = scheduledDate
-        self.completedAt = completedAt
-    }
-    
-
-    
-    var isReady: Bool {
-        player1 != nil && player2 != nil && status == .scheduled
-    }
-}
-
-enum TournamentFormat: String, Codable {
-    case weekly
-    case singleElimination
-    case doubleElimination
-    case roundRobin
-}
-
-enum TournamentStatus: String, Codable {
-    case open
-    case registering
-    case inProgress
-    case completed
-    case cancelled
-}
-
-enum TournamentMatchStatus: String, Codable {
-    case scheduled
-    case inProgress
-    case completed
-    case cancelled
-}
-
-enum TournamentError: Error {
-    case tournamentNotOpen
-    case tournamentNotInProgress
+enum TournamentError: LocalizedError, Equatable {
+    case invalidName
+    case invalidParticipantCount(Int)
+    case invalidStartDate
+    case registrationClosed
     case tournamentFull
-    case alreadyJoined
+    case alreadyRegistered
+    case invalidStatus(String)
+    case insufficientParticipants(Int)
     case matchAlreadyCompleted
-}
-
-// MARK: - Notifications
-
-extension Notification.Name {
-    static let tournamentStarted = Notification.Name("tournamentStarted")
-    static let tournamentCompleted = Notification.Name("tournamentCompleted")
-}
-
-// MARK: - Preview Helpers
-
-extension Tournament {
-    static var preview: Tournament {
-        Tournament(
-            name: "Summer Championship 2024",
-            description: "Join us for the biggest pickleball tournament of the summer!",
-            location: "City Sports Complex",
-            startDate: Date(),
-            endDate: Calendar.current.date(byAdding: .day, value: 7, to: Date())!,
-            maxParticipants: 32,
-            entryFee: 50.0,
-            format: .singleElimination,
-            skillLevel: "Intermediate"
-        )
-    }
+    case invalidMatchResult
+    case creationFailed(String)
+    case fetchFailed(String)
+    case operationInProgress
+    case batchOperationPartialFailure(String)
     
-    static var sampleTournaments: [Tournament] {
-        [
-            Tournament(
-                name: "Winter Classic 2024",
-                description: "Stay active this winter with indoor pickleball!",
-                location: "Sports Center",
-                startDate: Date(),
-                endDate: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
-                maxParticipants: 16,
-                entryFee: 35.0,
-                format: .doubleElimination,
-                skillLevel: "Advanced"
-            ),
-            Tournament(
-                name: "Spring Open 2024",
-                description: "Perfect for players of all levels!",
-                location: "Community Courts",
-                startDate: Calendar.current.date(byAdding: .month, value: 1, to: Date())!,
-                endDate: Calendar.current.date(byAdding: .month, value: 1, to: Date())!,
-                maxParticipants: 64,
-                entryFee: 75.0,
-                format: .roundRobin,
-                skillLevel: "All Levels"
-            )
-        ]
+    var errorDescription: String? {
+        switch self {
+        case .invalidName:
+            return "Tournament name is required"
+        case .invalidParticipantCount(let count):
+            return "Invalid participant count: \(count). Must be between 4 and 128."
+        case .invalidStartDate:
+            return "Tournament start date must be in the future"
+        case .registrationClosed:
+            return "Registration is closed for this tournament"
+        case .tournamentFull:
+            return "Tournament is full"
+        case .alreadyRegistered:
+            return "Already registered for this tournament"
+        case .invalidStatus(let status):
+            return "Invalid tournament status: \(status)"
+        case .insufficientParticipants(let count):
+            return "Insufficient participants: \(count). Minimum 4 required."
+        case .matchAlreadyCompleted:
+            return "Match has already been completed"
+        case .invalidMatchResult:
+            return "Invalid match result"
+        case .creationFailed(let reason):
+            return "Failed to create tournament: \(reason)"
+        case .fetchFailed(let reason):
+            return "Failed to fetch tournament: \(reason)"
+        case .operationInProgress:
+            return "Another operation is currently in progress"
+        case .batchOperationPartialFailure(let reason):
+            return "Batch operation partially failed: \(reason)"
+        }
+    }
+}
+
+// MARK: - Array Extension for Chunking
+
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}
+
+// MARK: - Int Extension for Ordinals
+
+extension Int {
+    var ordinal: String {
+        let suffix: String
+        switch self % 100 {
+        case 11...13:
+            suffix = "th"
+        default:
+            switch self % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        return "\(self)\(suffix)"
     }
 } 

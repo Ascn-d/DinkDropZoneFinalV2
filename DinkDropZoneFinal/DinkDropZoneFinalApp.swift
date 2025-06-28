@@ -38,8 +38,6 @@ struct DinkDropZoneFinalApp: App {
             PickleLeague.self,
             LeagueMatch.self,
             Team.self,
-            Tournament.self,
-            TournamentMatch.self,
             CourtLocation.self
         ])
         

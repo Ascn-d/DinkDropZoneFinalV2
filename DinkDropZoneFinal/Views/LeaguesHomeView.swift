@@ -70,14 +70,14 @@ struct LeaguesHomeView: View {
                         // Filters
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                FilterChip(
+                                LeagueFilterChip(
                                     title: "All Levels",
                                     isSelected: selectedSkillLevel == nil,
                                     action: { selectedSkillLevel = nil }
                                 )
                                 
                                 ForEach(["Beginner", "Intermediate", "Advanced"], id: \.self) { level in
-                                    FilterChip(
+                                    LeagueFilterChip(
                                         title: level,
                                         isSelected: selectedSkillLevel == level,
                                         action: { selectedSkillLevel = level }
@@ -125,7 +125,7 @@ struct LeaguesHomeView: View {
                 }
             }
             .sheet(isPresented: $showingCreateLeague) {
-                CreateLeagueWizard()
+                CreateTournamentWizard()
             }
             .sheet(item: $selectedLeague) { league in
                 LeagueDetailView(league: league)
@@ -134,7 +134,7 @@ struct LeaguesHomeView: View {
     }
 }
 
-struct FilterChip: View {
+struct LeagueFilterChip: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void

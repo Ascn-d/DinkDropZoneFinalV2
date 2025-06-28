@@ -38,6 +38,7 @@ final class AppState: ObservableObject {
     var pushNotificationService: PushNotificationService?
     var alphaTestingService: AlphaTestingService?
     var localMatchmakingService: LocalMatchmakingService?
+    var tournamentService: TournamentService?
 
     // Firestore listener handle
     private var userListenerHandle: FirebaseService.ListenerHandle?
@@ -192,6 +193,10 @@ final class AppState: ObservableObject {
         return networkService
     }
     
+    func getTournamentService() -> TournamentService? {
+        return tournamentService
+    }
+    
     // MARK: - Achievement System
     
     @Published var achievementTracker: AdvancedAchievementTracker?
@@ -217,6 +222,9 @@ final class AppState: ObservableObject {
         
         // Initialize local matchmaking for immediate testing
         self.localMatchmakingService = LocalMatchmakingService()
+        
+        // Initialize tournament service
+        self.tournamentService = TournamentService(firebaseService: FirebaseService.shared)
         
         // Initialize achievement system
         self.achievementTracker = AdvancedAchievementTracker()
@@ -426,6 +434,19 @@ final class AppState: ObservableObject {
         await loadNearbyPlayers()
         await loadLeaderboard()
         await loadAchievements()
+        await loadRealTournaments()
+    }
+    
+    private func loadRealTournaments() async {
+        guard let tournamentService = tournamentService else { return }
+        
+        do {
+            // Load real tournaments from Firebase
+            try await tournamentService.loadTournamentsFromFirebase()
+            LoggingService.shared.log("Loaded real tournaments from Firebase")
+        } catch {
+            LoggingService.shared.log("Failed to load tournaments: \(error)")
+        }
     }
     
     func loadRecentMatches() async {
@@ -746,6 +767,30 @@ final class AppState: ObservableObject {
     func refreshLeaderboard() {
         LoggingService.shared.log("Leaderboard refreshed")
         // In a real app, this would fetch fresh leaderboard data
+    }
+    
+    // MARK: - Tournament Management
+    
+    func refreshTournaments() {
+        LoggingService.shared.log("Tournaments refreshed")
+        // Load real tournaments from Firebase
+        Task {
+            await loadAvailableTournaments()
+        }
+    }
+    
+    func loadAvailableTournaments() async {
+        guard let tournamentService = tournamentService else { return }
+        
+        do {
+            let tournaments = try await tournamentService.firebaseService.getAllTournaments()
+            await MainActor.run {
+                // Store tournaments in AppState if needed
+                LoggingService.shared.log("Loaded \(tournaments.count) real tournaments from Firebase")
+            }
+        } catch {
+            LoggingService.shared.log("Failed to load tournaments: \(error)")
+        }
     }
     
     // MARK: - Notification Management
@@ -1091,4 +1136,5 @@ extension Notification.Name {
     static let showMissionCompleteNotification = Notification.Name("showMissionCompleteNotification")
     static let trophyUnlocked = Notification.Name("trophyUnlocked")
     static let navigateToQueue = Notification.Name("navigateToQueue")
+    static let navigateToTournaments = Notification.Name("navigateToTournaments")
 } 

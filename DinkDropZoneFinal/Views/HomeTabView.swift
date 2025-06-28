@@ -39,11 +39,11 @@ struct HomeTabView: View {
                     }
                     .tag(1)
                 
-                // Leaderboard Tab
-                LeaderboardView()
+                // Tournaments Tab
+                TournamentManagerView()
                     .tabItem {
                         Label {
-                            Text("Leaderboard")
+                            Text("Tournaments")
                         } icon: {
                             EnhancedTabBarIcon(
                                 systemName: "trophy.fill",
@@ -96,6 +96,12 @@ struct HomeTabView: View {
                 selectedTab = 1 // Switch to Queue tab
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToTournaments)) { _ in
+            print("🏆 HomeTabView: Received navigateToTournaments notification - switching to tab 2")
+            withAnimation {
+                selectedTab = 2 // Switch to Tournaments tab
+            }
+        }
     }
     
     private func handleTabChange(from oldTab: Int, to newTab: Int) {
@@ -120,8 +126,8 @@ struct HomeTabView: View {
         switch newTab {
         case 1: // Queue tab
             appState.refreshQueue()
-        case 2: // Leaderboard tab
-            appState.refreshLeaderboard()
+        case 2: // Tournaments tab
+            break // No special action needed for tournaments tab
         case 3: // Profile tab
             appState.markNotificationsAsRead()
         default:
@@ -158,7 +164,7 @@ struct HomeTabView: View {
         switch index {
         case 0: return "Dashboard"
         case 1: return "Find Match"
-        case 2: return "Leaderboard"
+        case 2: return "Tournaments"
         case 3: return "Profile"
         default: return "Unknown"
         }

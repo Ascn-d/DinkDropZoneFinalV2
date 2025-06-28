@@ -608,12 +608,10 @@ struct QueueView: View {
                     }
                 }
             } else {
-                EmptyStateView(
+                DSEmptyStateView(
                     icon: "person.2.slash",
                     title: "No players nearby",
-                    subtitle: "Try joining the queue or expanding your search radius",
-                    actionTitle: "Expand Search",
-                    action: expandSearchRadius
+                    message: "Try joining the queue or expanding your search radius"
                 )
             }
         }
@@ -661,7 +659,7 @@ struct QueueView: View {
             
             HStack(spacing: 12) {
                 // Active matches
-                StatCard(
+                QueueStatCard(
                     title: "Live Matches",
                     value: "\(queueStatistics.liveMatches)",
                     subtitle: "In progress",
@@ -670,7 +668,7 @@ struct QueueView: View {
                 )
                 
                 // Queue activity
-                StatCard(
+                QueueStatCard(
                     title: "Queue Activity",
                     value: queueStatistics.queueActivityLevel,
                     subtitle: "Current level",
@@ -679,7 +677,7 @@ struct QueueView: View {
                 )
                 
                 // Success rate
-                StatCard(
+                QueueStatCard(
                     title: "Your Win Rate",
                     value: "\(Int(skillAnalysis.recentWinRate * 100))%",
                     subtitle: "Last 10 games",
@@ -1022,17 +1020,29 @@ struct QueueView: View {
     }
     
     private func getNearbyCourts() -> [CourtAvailability] {
-        return [
-            CourtAvailability(id: "1", name: "Golden Gate Park", distance: "0.8 mi", status: .available, courts: 3),
-            CourtAvailability(id: "2", name: "Mission Dolores", distance: "1.2 mi", status: .busy, courts: 2)
-        ]
+        // Get real court data from Firebase/API
+        // For now, return empty array - implement real court data loading later
+        // TODO: Implement real court availability from Firebase or external API
+        return []
     }
     
-    private func getActiveTournaments() -> [MockTournament] {
-        return [
-            MockTournament(id: "1", name: "Friday Night Lights", participants: 16, maxParticipants: 32, startTime: "7:00 PM"),
-            MockTournament(id: "2", name: "Weekend Warriors", participants: 8, maxParticipants: 16, startTime: "9:00 AM")
-        ]
+    private func getActiveTournaments() async -> [Tournament] {
+        do {
+            // Get real tournaments from Firebase
+            let allTournaments = try await FirebaseService.shared.getAllTournaments()
+            
+            // Filter for active/upcoming tournaments
+            let activeTournaments = allTournaments.filter { tournament in
+                tournament.status == "Registration Open" || 
+                tournament.status == "Registration Closed" ||
+                tournament.status == "In Progress"
+            }.prefix(5) // Limit to 5 most relevant tournaments
+            
+            return Array(activeTournaments)
+        } catch {
+            print("Failed to load active tournaments: \(error)")
+            return []
+        }
     }
     
     private func getPracticePartners() -> [User] {
@@ -1040,10 +1050,12 @@ struct QueueView: View {
     }
     
     private func getRecentMatches() -> [QueueRecentMatch] {
-        return [
-            QueueRecentMatch(id: "1", opponent: "Sarah Chen", result: "Win", score: "11-8", date: "2 hours ago"),
-            QueueRecentMatch(id: "2", opponent: "Mike Johnson", result: "Loss", score: "9-11", date: "Yesterday")
-        ]
+        // Get real match history from Firebase
+        guard let currentUser = appState.currentUser else { return [] }
+        
+        // For now, return empty array - implement real match history loading later
+        // TODO: Implement real match history from Firebase
+        return []
     }
     
     // MARK: - Notification Observers
@@ -1107,6 +1119,46 @@ struct QueueView: View {
             } catch {
                 print("❌ Failed to decline match: \(error)")
             }
+        }
+    }
+    
+    // MARK: - Enhanced Activity Overview Section
+
+    private var enhancedActivityOverviewSection: some View {
+        VStack(spacing: 20) {
+            // Live Activity
+            liveActivityAndStatsSection
+            
+            // Active Tournaments (Real Data)
+            activeTournamentsSection
+            
+            // Nearby Players
+            enhancedNearbyPlayersSection
+            
+            // Court Recommendations
+            courtRecommendationsSection
+        }
+    }
+    
+    // MARK: - Active Tournaments Section (Real Data)
+    
+    private var activeTournamentsSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("🏆 Active Tournaments")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button("View All") {
+                    // Switch to tournaments tab
+                    NotificationCenter.default.post(name: .navigateToTournaments, object: nil)
+                }
+                .font(.caption)
+                .foregroundColor(.blue)
+            }
+            
+            // Load tournaments asynchronously
+            AsyncTournamentsView()
         }
     }
 }
@@ -1273,115 +1325,26 @@ struct CourtAvailability: Identifiable {
     }
 }
 
-struct MockTournament: Identifiable {
-    let id: String
-    let name: String
-    let participants: Int
-    let maxParticipants: Int
-    let startTime: String
-}
-
-struct QueueRecentMatch: Identifiable {
-    let id: String
-    let opponent: String
-    let result: String
-    let score: String
-    let date: String
-}
-
-// MARK: - Additional Supporting Views (Placeholder implementations)
-
-struct LiveMatchCard: View {
-    let match: LiveMatch
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(match.player1) vs \(match.player2)")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                Text(match.court)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            Text(match.timeElapsed)
-                .font(.caption2)
-                .foregroundColor(.green)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(.tertiarySystemBackground))
-        .cornerRadius(6)
-    }
-}
-
-struct CourtAvailabilityCard: View {
-    let court: CourtAvailability
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(court.name)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                    
-                    HStack {
-                        Text(court.distance)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("•")
-                            .foregroundColor(.secondary)
-                        Text("\(court.courts) courts")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                Text(court.status.text)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(court.status.color)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(court.status.color.opacity(0.2))
-                    )
-            }
-            .padding()
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(10)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
 struct TournamentCard: View {
-    let tournament: MockTournament
+    let tournament: Tournament
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                                    Text(tournament.name)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                        .fixedSize(horizontal: false, vertical: true)
+                Text(tournament.name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
                 
-                Text("\(tournament.participants)/\(tournament.maxParticipants)")
+                Text("\(tournament.registeredCount)/\(tournament.maxParticipants)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 
-                Text(tournament.startTime)
+                Text(tournament.startDate.formatted(date: .omitted, time: .shortened))
                     .font(.caption2)
                     .foregroundColor(.orange)
                     .fontWeight(.medium)
@@ -2294,7 +2257,7 @@ struct EnhancedLocalPlayerCard: View {
     }
 }
 
-struct EmptyStateView: View {
+struct QueueEmptyStateView: View {
     let icon: String
     let title: String
     let subtitle: String
@@ -2385,7 +2348,7 @@ struct CourtRecommendationCard: View {
     }
 }
 
-struct StatCard: View {
+struct QueueStatCard: View {
     let title: String
     let value: String
     let subtitle: String
@@ -2484,7 +2447,7 @@ struct SkillAnalysisView: View {
                     
                     // Performance metrics
                     HStack(spacing: 12) {
-                        StatCard(
+                        QueueStatCard(
                             title: "Win Rate",
                             value: "\(Int(analysis.recentWinRate * 100))%",
                             subtitle: "Last 10 games",
@@ -2492,7 +2455,7 @@ struct SkillAnalysisView: View {
                             color: .green
                         )
                         
-                        StatCard(
+                        QueueStatCard(
                             title: "Success Rate",
                             value: "\(Int(analysis.matchSuccessRate * 100))%",
                             subtitle: "Match completion",
@@ -2540,5 +2503,88 @@ struct SkillAnalysisView: View {
 extension Notification.Name {
     static let queueStatisticsUpdated = Notification.Name("queueStatisticsUpdated")
     static let skillAnalysisUpdated = Notification.Name("skillAnalysisUpdated")
+}
+
+// Add this async tournaments view
+struct AsyncTournamentsView: View {
+    @State private var tournaments: [Tournament] = []
+    @State private var isLoading = true
+    
+    var body: some View {
+        Group {
+            if isLoading {
+                HStack(spacing: 12) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(.secondarySystemBackground))
+                            .frame(width: 100, height: 80)
+                            .redacted(reason: .placeholder)
+                    }
+                }
+            } else if tournaments.isEmpty {
+                VStack(spacing: 8) {
+                    Text("No active tournaments")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Button("Create Tournament") {
+                        NotificationCenter.default.post(name: .navigateToTournaments, object: nil)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(10)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(tournaments.prefix(5), id: \.id) { tournament in
+                            TournamentCard(tournament: tournament) {
+                                // Navigate to tournament details
+                                NotificationCenter.default.post(name: .navigateToTournaments, object: nil)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+            }
+        }
+        .task {
+            await loadTournaments()
+        }
+    }
+    
+    private func loadTournaments() async {
+        do {
+            let allTournaments = try await FirebaseService.shared.getAllTournaments()
+            
+            let activeTournaments = allTournaments.filter { tournament in
+                tournament.status == "Registration Open" || 
+                tournament.status == "Registration Closed" ||
+                tournament.status == "In Progress"
+            }
+            
+            await MainActor.run {
+                self.tournaments = Array(activeTournaments.prefix(5))
+                self.isLoading = false
+            }
+        } catch {
+            print("Failed to load tournaments: \(error)")
+            await MainActor.run {
+                self.tournaments = []
+                self.isLoading = false
+            }
+        }
+    }
+}
+
+struct QueueRecentMatch: Identifiable {
+    let id: String
+    let opponent: String
+    let result: String
+    let score: String
+    let date: String
 }
 
