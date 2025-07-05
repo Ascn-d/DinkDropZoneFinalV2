@@ -86,7 +86,10 @@ struct ProfileView: View {
                             )
                             
                             VStack(spacing: 12) {
-                                NavigationLink(destination: MyTournamentsView()) {
+                                Button {
+                                    // Navigate to tournaments tab
+                                    NotificationCenter.default.post(name: .navigateToTournaments, object: nil)
+                                } label: {
                                     ProfileNavigationCard(
                                         title: "My Tournaments",
                                         subtitle: "View your joined and created tournaments",

@@ -1051,7 +1051,7 @@ struct QueueView: View {
     
     private func getRecentMatches() -> [QueueRecentMatch] {
         // Get real match history from Firebase
-        guard let currentUser = appState.currentUser else { return [] }
+        guard appState.currentUser != nil else { return [] }
         
         // For now, return empty array - implement real match history loading later
         // TODO: Implement real match history from Firebase

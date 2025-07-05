@@ -354,4 +354,360 @@ enum Gender: String, CaseIterable, Codable {
     case womens = "Women's"
     case mixed = "Mixed"
     case open = "Open"
+}
+
+// MARK: - Tournament Analytics Models
+
+/// Tournament statistics for analytics and reporting
+struct TournamentStatistics: Codable {
+    var totalTournaments: Int = 0
+    var openTournaments: Int = 0
+    var activeTournaments: Int = 0
+    var completedTournaments: Int = 0
+    var fullTournaments: Int = 0
+    var totalParticipants: Int = 0
+    
+    var averageParticipantsPerTournament: Double {
+        totalTournaments > 0 ? Double(totalParticipants) / Double(totalTournaments) : 0.0
+    }
+    
+    var completionRate: Double {
+        totalTournaments > 0 ? Double(completedTournaments) / Double(totalTournaments) : 0.0
+    }
+    
+    var fillRate: Double {
+        totalTournaments > 0 ? Double(fullTournaments) / Double(totalTournaments) : 0.0
+    }
+}
+
+/// Tournament leaderboard entry for global rankings
+struct TournamentLeaderboardEntry: Codable, Identifiable {
+    let id: UUID
+    let userId: String
+    let displayName: String
+    var tournamentsPlayed: Int
+    var championships: Int
+    var totalWins: Int
+    var totalLosses: Int
+    var totalPlacement: Int
+    var averageRank: Double
+    var winRate: Double
+    var points: Int
+    
+    var rank: Int = 0 // Set when generating leaderboard
+    
+    init(userId: String, displayName: String, tournamentsPlayed: Int = 0, championships: Int = 0, totalWins: Int = 0, totalLosses: Int = 0, totalPlacement: Int = 0, averageRank: Double = 0.0, winRate: Double = 0.0, points: Int = 0) {
+        self.id = UUID()
+        self.userId = userId
+        self.displayName = displayName
+        self.tournamentsPlayed = tournamentsPlayed
+        self.championships = championships
+        self.totalWins = totalWins
+        self.totalLosses = totalLosses
+        self.totalPlacement = totalPlacement
+        self.averageRank = averageRank
+        self.winRate = winRate
+        self.points = points
+    }
+}
+
+// MARK: - Enhanced Tournament Participant
+
+extension TournamentParticipant {
+    /// Creates a participant from a User object
+    init(from user: User, partnerID: String? = nil, partnerName: String? = nil) {
+        self.init(
+            userID: user.id.uuidString,
+            displayName: user.displayName,
+            elo: user.elo,
+            partnerID: partnerID,
+            partnerName: partnerName
+        )
+    }
+    
+    /// Team name for doubles tournaments
+    var teamDisplayName: String {
+        return teamName?.isEmpty == false ? teamName! : effectiveName
+    }
+    
+    /// Performance rating based on wins/losses and placement
+    var performanceRating: Double {
+        let winLossRatio = (wins + losses) > 0 ? Double(wins) / Double(wins + losses) : 0.0
+        let placementBonus = placement != nil ? max(0, 10 - (placement ?? 10)) : 0
+        return winLossRatio * 100 + Double(placementBonus) * 5
+    }
+}
+
+// MARK: - Tournament Status Extensions
+
+extension Tournament {
+    /// Check if tournament is in progress
+    var isInProgress: Bool {
+        return status == "In Progress"
+    }
+    
+    /// Check if tournament is completed
+    var isCompleted: Bool {
+        return status == "Completed"
+    }
+    
+    /// Calculate registration progress (0.0 to 1.0)
+    var registrationProgress: Double {
+        return maxParticipants > 0 ? Double(participants.count) / Double(maxParticipants) : 0.0
+    }
+    
+    /// Get available slots
+    var availableSlots: Int {
+        return max(0, maxParticipants - participants.count)
+    }
+    
+    /// Check if tournament is full
+    var isFull: Bool {
+        return participants.count >= maxParticipants
+    }
+    
+    /// Get tournament duration
+    var duration: TimeInterval {
+        return endDate.timeIntervalSince(startDate)
+    }
+    
+    /// Get elapsed time since start (for in-progress tournaments)
+    var elapsedTime: TimeInterval {
+        guard isInProgress else { return 0 }
+        return Date().timeIntervalSince(startDate)
+    }
+    
+    /// Get estimated completion time
+    var estimatedCompletionTime: Date {
+        // Simple estimation based on number of matches and average match duration
+        let averageMatchDuration: TimeInterval = 45 * 60 // 45 minutes
+        let estimatedTotalTime = Double(matches.count) * averageMatchDuration
+        return startDate.addingTimeInterval(estimatedTotalTime)
+    }
+    
+    /// Get active matches
+    var activeMatches: [TournamentMatch] {
+        return matches.filter { $0.status == "In Progress" || $0.status == "Ready" }
+    }
+    
+    /// Get completed matches
+    var completedMatches: [TournamentMatch] {
+        return matches.filter { $0.status == "Completed" }
+    }
+    
+    /// Get current round number
+    var currentRound: Int {
+        return matches.map { $0.round }.max() ?? 1
+    }
+    
+    /// Get tournament progress (0.0 to 1.0)
+    var progress: Double {
+        guard !matches.isEmpty else { return 0.0 }
+        return Double(completedMatches.count) / Double(matches.count)
+    }
+    
+    /// Get champion (first place participant)
+    var champion: TournamentParticipant? {
+        return participants.first { $0.placement == 1 }
+    }
+    
+    /// Get runner-up (second place participant)
+    var runnerUp: TournamentParticipant? {
+        return participants.first { $0.placement == 2 }
+    }
+    
+    /// Get third place participant
+    var thirdPlace: TournamentParticipant? {
+        return participants.first { $0.placement == 3 }
+    }
+    
+    /// Get leaderboard (sorted participants by placement)
+    var leaderboard: [TournamentParticipant] {
+        return participants.sorted { p1, p2 in
+            let placement1 = p1.placement ?? 999
+            let placement2 = p2.placement ?? 999
+            return placement1 < placement2
+        }
+    }
+}
+
+// MARK: - Tournament Match Extensions
+
+extension TournamentMatch {
+    /// Check if match involves a specific user
+    func involvesUser(_ userId: String) -> Bool {
+        return player1ID == userId || player2ID == userId
+    }
+    
+    /// Get opponent ID for a specific user
+    func getOpponentId(for userId: String) -> String? {
+        if player1ID == userId {
+            return player2ID
+        } else if player2ID == userId {
+            return player1ID
+        }
+        return nil
+    }
+    
+    /// Get opponent name for a specific user
+    func getOpponentName(for userId: String) -> String {
+        if player1ID == userId {
+            return player2Name.isEmpty ? "TBD" : player2Name
+        } else if player2ID == userId {
+            return player1Name.isEmpty ? "TBD" : player1Name
+        }
+        return "Unknown"
+    }
+    
+    /// Check if user won this match
+    func didUserWin(_ userId: String) -> Bool? {
+        guard status == "Completed", let winnerId = winnerID else { return nil }
+        return winnerId == userId
+    }
+    
+    /// Get match duration (if completed)
+    var matchDuration: TimeInterval? {
+        // This would require storing match start/end times in the model
+        // For now, return nil
+        return nil
+    }
+    
+    /// Get formatted match description
+    var matchDescription: String {
+        let p1Name = player1Name.isEmpty ? "TBD" : player1Name
+        let p2Name = player2Name.isEmpty ? "TBD" : player2Name
+        
+        if status == "Completed", !finalScore.isEmpty {
+            return "\(p1Name) vs \(p2Name) - \(finalScore)"
+        } else {
+            return "\(p1Name) vs \(p2Name)"
+        }
+    }
+}
+
+// MARK: - Tournament Validation Helpers
+
+extension Tournament {
+    /// Validate tournament data for creation
+    func validate() throws {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw TournamentError.invalidName
+        }
+        
+        guard maxParticipants >= 4 && maxParticipants <= 128 else {
+            throw TournamentError.invalidParticipantCount(maxParticipants)
+        }
+        
+        guard startDate > Date() else {
+            throw TournamentError.invalidStartDate
+        }
+        
+        guard endDate > startDate else {
+            throw TournamentError.invalidStartDate
+        }
+        
+        guard !organizerID.isEmpty else {
+            throw TournamentError.invalidStatus("Organizer ID cannot be empty")
+        }
+    }
+    
+    /// Check if user can register for this tournament
+    func canUserRegister(_ userId: String) -> (canRegister: Bool, reason: String?) {
+        guard isRegistrationOpen else {
+            return (false, "Registration is closed")
+        }
+        
+        guard !isFull else {
+            return (false, "Tournament is full")
+        }
+        
+        guard !participants.contains(where: { $0.userID == userId }) else {
+            return (false, "Already registered")
+        }
+        
+        return (true, nil)
+    }
+    
+    /// Check if tournament can be started
+    func canBeStarted() -> (canStart: Bool, reason: String?) {
+        guard status == "Registration Open" || status == "Registration Closed" else {
+            return (false, "Tournament status must be Registration Open or Closed")
+        }
+        
+        guard participants.count >= 4 else {
+            return (false, "Need at least 4 participants")
+        }
+        
+        return (true, nil)
+    }
+}
+
+// MARK: - Error Types
+
+enum TournamentError: LocalizedError, Equatable {
+    case invalidName
+    case invalidParticipantCount(Int)
+    case invalidStartDate
+    case registrationClosed
+    case tournamentFull
+    case alreadyRegistered
+    case notRegistered
+    case invalidStatus(String)
+    case insufficientParticipants(Int)
+    case matchAlreadyCompleted
+    case invalidMatchResult
+    case operationInProgress
+    case batchOperationPartialFailure(String)
+    case creationFailed(String)
+    case fetchFailed(String)
+    case registrationFailed(String)
+    case leaveFailed(String)
+    case matchUpdateFailed(String)
+    case networkError(String)
+    case operationFailed(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidName:
+            return "Tournament name cannot be empty"
+        case .invalidParticipantCount(let count):
+            return "Invalid participant count: \(count). Must be between 4 and 128."
+        case .invalidStartDate:
+            return "Tournament start date must be in the future"
+        case .registrationClosed:
+            return "Registration for this tournament is closed"
+        case .tournamentFull:
+            return "Tournament is full"
+        case .alreadyRegistered:
+            return "Already registered for this tournament"
+        case .notRegistered:
+            return "Not registered for this tournament"
+        case .invalidStatus(let status):
+            return "Invalid tournament status: \(status)"
+        case .insufficientParticipants(let count):
+            return "Insufficient participants to start tournament: \(count)"
+        case .matchAlreadyCompleted:
+            return "Match has already been completed"
+        case .invalidMatchResult:
+            return "Invalid match result"
+        case .operationInProgress:
+            return "Another operation is already in progress"
+        case .batchOperationPartialFailure(let message):
+            return "Batch operation partially failed: \(message)"
+        case .creationFailed(let message):
+            return "Failed to create tournament: \(message)"
+        case .fetchFailed(let message):
+            return "Failed to fetch tournament data: \(message)"
+        case .registrationFailed(let message):
+            return "Failed to register for tournament: \(message)"
+        case .leaveFailed(let message):
+            return "Failed to leave tournament: \(message)"
+        case .matchUpdateFailed(let message):
+            return "Failed to update match: \(message)"
+        case .networkError(let message):
+            return "Network error: \(message)"
+        case .operationFailed(let message):
+            return "Operation failed: \(message)"
+        }
+    }
 } 

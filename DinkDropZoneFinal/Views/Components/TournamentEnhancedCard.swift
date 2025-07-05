@@ -459,4 +459,685 @@ struct TournamentPremiumButtonModifier: ViewModifier {
     }
     .padding()
     .background(DS.Color.background)
+}
+
+// MARK: - Enhanced Filter Chip
+struct EnhancedFilterChip: View {
+    let filter: TournamentFilter
+    let count: Int
+    let isSelected: Bool
+    let action: () -> Void
+    
+    enum TournamentFilter: String, CaseIterable {
+        case all = "All"
+        case open = "Open Registration"
+        case starting = "Starting Soon"
+        case inProgress = "In Progress"
+        case nearby = "Nearby"
+        
+        var icon: String {
+            switch self {
+            case .all: return "list.bullet"
+            case .open: return "door.left.hand.open"
+            case .starting: return "clock.fill"
+            case .inProgress: return "play.circle.fill"
+            case .nearby: return "location.fill"
+            }
+        }
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: filter.icon)
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .white : .accentColor)
+                
+                Text(filter.rawValue)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : .primary)
+                
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? Color.white.opacity(0.3) : Color.accentColor.opacity(0.2))
+                        )
+                        .foregroundColor(isSelected ? .white : .accentColor)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(isSelected ? Color.accentColor : Color.accentColor.opacity(0.1))
+                    .shadow(color: isSelected ? .accentColor.opacity(0.3) : .clear, radius: 2)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - My Tournament Filter Chip
+struct MyFilterChip: View {
+    let filter: MyTournamentFilter
+    let count: Int
+    let isSelected: Bool
+    let action: () -> Void
+    
+    enum MyTournamentFilter: String, CaseIterable {
+        case active = "Active"
+        case upcoming = "Upcoming"
+        case completed = "Completed"
+        case all = "All"
+        
+        var icon: String {
+            switch self {
+            case .active: return "play.circle.fill"
+            case .upcoming: return "clock.fill"
+            case .completed: return "checkmark.circle.fill"
+            case .all: return "list.bullet"
+            }
+        }
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: filter.icon)
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .white : .accentColor)
+                
+                Text(filter.rawValue)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : .primary)
+                
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? Color.white.opacity(0.3) : Color.accentColor.opacity(0.2))
+                        )
+                        .foregroundColor(isSelected ? .white : .accentColor)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(isSelected ? Color.accentColor : Color.accentColor.opacity(0.1))
+                    .shadow(color: isSelected ? .accentColor.opacity(0.3) : .clear, radius: 2)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Enhanced Stat Card
+struct EnhancedStatCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    let trend: StatTrend?
+    
+    enum StatTrend {
+        case up, down
+        
+        var icon: String {
+            switch self {
+            case .up: return "arrow.up.circle.fill"
+            case .down: return "arrow.down.circle.fill"
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .up: return .green
+            case .down: return .red
+            }
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundColor(color)
+                
+                if let trend = trend {
+                    Image(systemName: trend.icon)
+                        .font(.caption)
+                        .foregroundColor(trend.color)
+                }
+            }
+            
+            VStack(spacing: 2) {
+                Text(value)
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(minWidth: 80, minHeight: 70)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(color.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(color.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+}
+
+// MARK: - Enhanced Tournament Card
+struct EnhancedTournamentCard: View {
+    let tournament: Tournament
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header with status
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tournament.name)
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "location.fill")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text(tournament.venueName)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    EnhancedStatusBadge(status: tournament.status)
+                }
+                
+                // Tournament details
+                HStack(spacing: 16) {
+                    DetailPill(
+                        icon: "calendar",
+                        text: tournament.startDate.formatted(date: .abbreviated, time: .shortened),
+                        color: .blue
+                    )
+                    
+                    DetailPill(
+                        icon: "person.2.fill",
+                        text: "\(tournament.participants.count)/\(tournament.maxParticipants)",
+                        color: .green
+                    )
+                    
+                    DetailPill(
+                        icon: "trophy.fill",
+                        text: tournament.format,
+                        color: .orange
+                    )
+                    
+                    Spacer()
+                }
+                
+                // Description (if available)
+                if !tournament.description.isEmpty {
+                    Text(tournament.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                
+                // Registration progress
+                if tournament.status == "Registration Open" {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Registration")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            Text("\(tournament.participants.count) of \(tournament.maxParticipants)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        ProgressView(value: Double(tournament.participants.count), total: Double(tournament.maxParticipants))
+                            .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
+                    }
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(.quaternary, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Enhanced Tournament Discovery Card
+struct EnhancedTournamentDiscoveryCard: View {
+    let tournament: Tournament
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header with status
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tournament.name)
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "location.fill")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text(tournament.venueName)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    EnhancedStatusBadge(status: tournament.status)
+                }
+                
+                // Tournament details
+                HStack(spacing: 16) {
+                    DetailPill(
+                        icon: "calendar",
+                        text: tournament.startDate.formatted(date: .abbreviated, time: .shortened),
+                        color: .blue
+                    )
+                    
+                    DetailPill(
+                        icon: "person.2.fill",
+                        text: "\(tournament.participants.count)/\(tournament.maxParticipants)",
+                        color: .green
+                    )
+                    
+                    DetailPill(
+                        icon: "trophy.fill",
+                        text: tournament.format,
+                        color: .orange
+                    )
+                    
+                    Spacer()
+                }
+                
+                // Description (if available)
+                if !tournament.description.isEmpty {
+                    Text(tournament.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                
+                // Registration progress
+                if tournament.status == "Registration Open" {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Registration")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            Text("\(tournament.participants.count) of \(tournament.maxParticipants)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        ProgressView(value: Double(tournament.participants.count), total: Double(tournament.maxParticipants))
+                            .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
+                    }
+                }
+                
+                // Action button
+                if tournament.status == "Registration Open" {
+                    HStack {
+                        Spacer()
+                        
+                        Button("Join Tournament") {
+                            // Handle join action
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(.quaternary, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Enhanced My Tournament Card
+struct EnhancedMyTournamentCard: View {
+    let tournament: Tournament
+    let userStatus: UserTournamentStatus
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header with user status
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tournament.name)
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "location.fill")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text(tournament.venueName)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    UserStatusBadge(status: userStatus)
+                }
+                
+                // Progress or details based on status
+                if tournament.status == "In Progress" {
+                    progressSection
+                } else {
+                    detailsSection
+                }
+                
+                // Action buttons
+                HStack {
+                    if tournament.status == "In Progress" {
+                        ActionButton(
+                            title: "View Bracket",
+                            icon: "tournament",
+                            color: .blue,
+                            style: .secondary
+                        ) {
+                            // Handle bracket view
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    if userStatus.hasUpcomingMatch {
+                        ActionButton(
+                            title: "Next Match",
+                            icon: "play.circle.fill",
+                            color: .green,
+                            style: .primary
+                        ) {
+                            // Handle next match
+                        }
+                    }
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(userStatus.color.opacity(0.3), lineWidth: 1.5)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private var progressSection: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Tournament Progress")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text("Round \(getCurrentRound())")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.accentColor)
+            }
+            
+            ProgressView(value: getTournamentProgress())
+                .progressViewStyle(LinearProgressViewStyle(tint: userStatus.color))
+        }
+    }
+    
+    private var detailsSection: some View {
+        HStack(spacing: 16) {
+            DetailPill(
+                icon: "calendar",
+                text: tournament.startDate.formatted(date: .abbreviated, time: .shortened),
+                color: .blue
+            )
+            
+            DetailPill(
+                icon: "trophy.fill",
+                text: tournament.format,
+                color: .orange
+            )
+            
+            if let placement = getUserPlacement() {
+                DetailPill(
+                    icon: "number.circle.fill",
+                    text: "#\(placement)",
+                    color: placement <= 3 ? .yellow : .gray
+                )
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private func getCurrentRound() -> Int {
+        tournament.matches.map { $0.round }.max() ?? 1
+    }
+    
+    private func getTournamentProgress() -> Double {
+        let totalMatches = tournament.matches.count
+        let completedMatches = tournament.matches.filter { $0.status == "Completed" }.count
+        return totalMatches > 0 ? Double(completedMatches) / Double(totalMatches) : 0.0
+    }
+    
+    private func getUserPlacement() -> Int? {
+        // This would need access to current user - simplified for now
+        return nil
+    }
+}
+
+// LiveTournamentCard moved to TournamentTabView.swift to avoid duplication
+
+// MARK: - Supporting Components
+
+struct EnhancedStatusBadge: View {
+    let status: String
+    
+    var body: some View {
+        Text(status)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(statusColor.opacity(0.2))
+                    .overlay(
+                        Capsule()
+                            .stroke(statusColor, lineWidth: 1)
+                    )
+            )
+            .foregroundColor(statusColor)
+    }
+    
+    private var statusColor: Color {
+        switch status {
+        case "Registration Open": return .green
+        case "Registration Closed": return .orange
+        case "In Progress": return .blue
+        case "Completed": return .gray
+        default: return .secondary
+        }
+    }
+}
+
+struct UserStatusBadge: View {
+    let status: UserTournamentStatus
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            if status.hasUpcomingMatch {
+                Circle()
+                    .fill(status.color)
+                    .frame(width: 6, height: 6)
+                    .scaleEffect(1.2)
+                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: true)
+            }
+            
+            Text(status.description)
+                .font(.caption)
+                .fontWeight(.semibold)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(status.color.opacity(0.2))
+                .overlay(
+                    Capsule()
+                        .stroke(status.color, lineWidth: 1)
+                )
+        )
+        .foregroundColor(status.color)
+    }
+}
+
+struct DetailPill: View {
+    let icon: String
+    let text: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundColor(color)
+            
+            Text(text)
+                .font(.caption2)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(color.opacity(0.1))
+        )
+    }
+}
+
+struct ActionButton: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let style: ActionButtonStyle
+    let action: () -> Void
+    
+    enum ActionButtonStyle {
+        case primary, secondary
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(style == .primary ? color : Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(color, lineWidth: 1)
+                    )
+            )
+            .foregroundColor(style == .primary ? .white : color)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - UserTournamentStatus Extension
+
+extension UserTournamentStatus {
+    var hasUpcomingMatch: Bool {
+        switch self {
+        case .hasMatch: return true
+        case .waitingForMatch: return true
+        default: return false
+        }
+    }
 } 

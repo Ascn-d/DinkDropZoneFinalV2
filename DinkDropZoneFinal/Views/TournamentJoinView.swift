@@ -3,7 +3,7 @@ import SwiftData
 
 struct TournamentJoinView: View {
     let tournament: Tournament
-    let enhancedService: TournamentServiceEnhanced
+    let tournamentService: TournamentService
     
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
@@ -526,14 +526,16 @@ struct TournamentJoinView: View {
                     
                     // Create a User object for the partner (simplified)
                     partner = User(
+                        email: "partner@placeholder.com", // We don't have email from participant
+                        password: "placeholder", // Placeholder password
                         displayName: partnerParticipant.displayName,
-                        email: "", // We don't have email from participant
                         elo: partnerParticipant.elo
                     )
                 }
                 
-                // Use enhanced service to join tournament
-                try await enhancedService.joinTournament(tournament, user: currentUser, partner: partner)
+                // Use tournament service to join tournament
+                _ = partner?.displayName
+                try await tournamentService.joinTournament(tournament, user: currentUser)
                 
                 await MainActor.run {
                     isLoading = false
@@ -784,11 +786,8 @@ struct ConfirmationCard: View {
     )
     
     let appState = AppState()
-    let enhancedService = TournamentServiceEnhanced(
-        firebaseService: FirebaseService.shared,
-        tournamentService: TournamentService(firebaseService: FirebaseService.shared)
-    )
+    let tournamentService = TournamentService(firebaseService: FirebaseService.shared)
     
-    TournamentJoinView(tournament: tournament, enhancedService: enhancedService)
+    TournamentJoinView(tournament: tournament, tournamentService: tournamentService)
         .environmentObject(appState)
 } 

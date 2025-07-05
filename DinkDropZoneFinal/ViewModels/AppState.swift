@@ -1137,4 +1137,5 @@ extension Notification.Name {
     static let trophyUnlocked = Notification.Name("trophyUnlocked")
     static let navigateToQueue = Notification.Name("navigateToQueue")
     static let navigateToTournaments = Notification.Name("navigateToTournaments")
+    static let navigateToMyTournaments = Notification.Name("navigateToMyTournaments")
 } 

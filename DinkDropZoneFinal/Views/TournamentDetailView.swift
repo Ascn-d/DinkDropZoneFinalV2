@@ -220,6 +220,12 @@ struct TournamentDetailView: View {
             return "trophy"
         case .active:
             return "play.circle"
+        case .champion:
+            return "crown.fill"
+        case .runnerUp:
+            return "medal.fill"
+        case .thirdPlace:
+            return "medal"
         }
     }
     
@@ -236,9 +242,15 @@ struct TournamentDetailView: View {
         case .eliminated:
             return .red
         case .finished:
-            return .yellow
+            return .gray
         case .active:
             return .green
+        case .champion:
+            return .yellow
+        case .runnerUp:
+            return .gray
+        case .thirdPlace:
+            return .orange
         }
     }
     
@@ -331,6 +343,48 @@ struct TournamentDetailView: View {
                     Text("Waiting for your next match...")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                }
+                .padding()
+                
+            case .champion:
+                VStack(spacing: 8) {
+                    Text("🏆 CHAMPION! 🏆")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.yellow)
+                    
+                    Text("Congratulations on winning the tournament!")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+                
+            case .runnerUp:
+                VStack(spacing: 8) {
+                    Text("🥈 Runner-up")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.gray)
+                    
+                    Text("Great performance! You finished in 2nd place.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+                
+            case .thirdPlace:
+                VStack(spacing: 8) {
+                    Text("🥉 Third Place")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.orange)
+                    
+                    Text("Excellent job! You finished in 3rd place.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .padding()
             }

@@ -40,7 +40,7 @@ struct HomeTabView: View {
                     .tag(1)
                 
                 // Tournaments Tab
-                TournamentManagerView()
+                TournamentTabView()
                     .tabItem {
                         Label {
                             Text("Tournaments")

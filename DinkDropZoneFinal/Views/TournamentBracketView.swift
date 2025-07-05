@@ -2,13 +2,24 @@ import SwiftUI
 import SwiftData
 
 struct TournamentBracketView: View {
-    let tournament: Tournament
-    @StateObject private var bracketEngine = BracketEngine()
+    @State private var tournament: Tournament
+
+    @StateObject private var tournamentService = TournamentService(firebaseService: FirebaseService.shared)
     @State private var selectedMatch: TournamentMatch? = nil
     @State private var showMatchDetails = false
     @State private var animateProgress = false
     @State private var selectedRound: Int? = nil
     @State private var isLoading = true
+    @State private var lastUpdateTime = Date()
+    
+    // Real-time update timer
+    @State private var updateTimer: Timer?
+    @State private var showingInteractiveBracket = false
+    @State private var showingAdvancedBracket = false
+    
+    init(tournament: Tournament) {
+        self._tournament = State(initialValue: tournament)
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -33,10 +44,35 @@ struct TournamentBracketView: View {
         }
         .navigationTitle("Tournament Bracket")
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button {
+                    showingInteractiveBracket = true
+                } label: {
+                    Image(systemName: "hand.draw")
+                        .foregroundColor(.brown)
+                }
+                
+                Button {
+                    showingAdvancedBracket = true
+                } label: {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.yellow)
+                }
+                
+                liveUpdateIndicator
+            }
+        }
         .sheet(isPresented: $showMatchDetails) {
             if let match = selectedMatch {
                 EnhancedMatchDetailsView(match: match, tournament: tournament)
             }
+        }
+        .fullScreenCover(isPresented: $showingInteractiveBracket) {
+            InteractiveTournamentBracketView(tournament: tournament)
+        }
+        .fullScreenCover(isPresented: $showingAdvancedBracket) {
+            AdvancedInteractiveBracketView(tournament: tournament)
         }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -45,6 +81,10 @@ struct TournamentBracketView: View {
                     animateProgress = true
                 }
             }
+            startLiveUpdates()
+        }
+        .onDisappear {
+            stopLiveUpdates()
         }
     }
     
@@ -210,7 +250,9 @@ struct TournamentBracketView: View {
     }
     
     private var enhancedProgressRing: some View {
-        let status = bracketEngine.getBracketStatus(tournament: tournament)
+        let completedMatches = tournament.matches.filter { $0.status == "Completed" }.count
+        let totalMatches = tournament.matches.count
+        let progress = totalMatches > 0 ? Double(completedMatches) / Double(totalMatches) : 0
         
         return ZStack {
             // Background ring
@@ -220,7 +262,7 @@ struct TournamentBracketView: View {
             
             // Progress ring
             Circle()
-                .trim(from: 0, to: animateProgress ? status.overallProgress : 0)
+                .trim(from: 0, to: animateProgress ? progress : 0)
                 .stroke(
                     AngularGradient(
                         colors: [.brown, .brown.opacity(0.7), .brown],
@@ -236,12 +278,12 @@ struct TournamentBracketView: View {
             
             // Center content
             VStack(spacing: 4) {
-                Text("\(Int(status.overallProgress * 100))")
+                Text("\(Int(progress * 100))")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(.brown)
                     .contentTransition(.numericText())
-                    .animation(.easeOut(duration: 1).delay(0.8), value: status.overallProgress)
+                    .animation(.easeOut(duration: 1).delay(0.8), value: progress)
                 
                 Text("%")
                     .font(.caption)
@@ -272,17 +314,17 @@ struct TournamentBracketView: View {
                 color: .green
             )
             
-            let status = bracketEngine.getBracketStatus(tournament: tournament)
+            let completedMatches = tournament.matches.filter { $0.status == "Completed" }.count
             statCard(
                 title: "Completed",
-                value: "\(status.totalCompleted)",
+                value: "\(completedMatches)",
                 icon: "checkmark.circle.fill",
                 color: .purple
             )
             
             statCard(
                 title: "Remaining",
-                value: "\(status.totalMatches - status.totalCompleted)",
+                value: "\(tournament.matches.count - completedMatches)",
                 icon: "clock.fill",
                 color: .orange
             )
@@ -319,7 +361,9 @@ struct TournamentBracketView: View {
     }
     
     private var bracketProgressView: some View {
-        let status = bracketEngine.getBracketStatus(tournament: tournament)
+        let completedMatches = tournament.matches.filter { $0.status == "Completed" }.count
+        let totalMatches = tournament.matches.count
+        let progress = totalMatches > 0 ? Double(completedMatches) / Double(totalMatches) : 0
         
         return VStack(spacing: 16) {
             Text("Tournament Progress")
@@ -327,22 +371,30 @@ struct TournamentBracketView: View {
                 .foregroundColor(.primary)
             
             if tournament.type == "Double Elimination" {
+                let winnersMatches = tournament.matches.filter { $0.bracket == "Winners" }
+                let winnersCompleted = winnersMatches.filter { $0.status == "Completed" }.count
+                let winnersProgress = winnersMatches.count > 0 ? Double(winnersCompleted) / Double(winnersMatches.count) : 0
+                
+                let losersMatches = tournament.matches.filter { $0.bracket == "Losers" }
+                let losersCompleted = losersMatches.filter { $0.status == "Completed" }.count
+                let losersProgress = losersMatches.count > 0 ? Double(losersCompleted) / Double(losersMatches.count) : 0
+                
                 VStack(spacing: 12) {
                     // Winners bracket progress
                     progressBar(
                         title: "Winners Bracket",
-                        progress: status.winnersProgress,
-                        completed: status.winnersCompleted,
-                        total: status.winnersTotal,
+                        progress: winnersProgress,
+                        completed: winnersCompleted,
+                        total: winnersMatches.count,
                         color: .blue
                     )
                     
                     // Losers bracket progress
                     progressBar(
                         title: "Losers Bracket",
-                        progress: status.losersProgress,
-                        completed: status.losersCompleted,
-                        total: status.losersTotal,
+                        progress: losersProgress,
+                        completed: losersCompleted,
+                        total: losersMatches.count,
                         color: .orange
                     )
                 }
@@ -350,9 +402,9 @@ struct TournamentBracketView: View {
                 // Single elimination or round robin progress
                 progressBar(
                     title: "Overall Progress",
-                    progress: status.overallProgress,
-                    completed: status.totalCompleted,
-                    total: status.totalMatches,
+                    progress: progress,
+                    completed: completedMatches,
+                    total: totalMatches,
                     color: .green
                 )
             }
@@ -788,6 +840,75 @@ struct TournamentBracketView: View {
             return "LR \(round)"
         }
     }
+    
+    // MARK: - Live Updates
+    
+    private var liveUpdateIndicator: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(.green)
+                .frame(width: 8, height: 8)
+                .scaleEffect(animateProgress ? 1.2 : 1.0)
+                .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: animateProgress)
+            
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("LIVE")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.green)
+                
+                Text(lastUpdateTime, style: .time)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(.green.opacity(0.1))
+        )
+    }
+    
+    private func startLiveUpdates() {
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
+            Task {
+                await refreshTournamentData()
+            }
+        }
+    }
+    
+    private func stopLiveUpdates() {
+        updateTimer?.invalidate()
+        updateTimer = nil
+    }
+    
+    private func refreshTournamentData() async {
+        do {
+            let updatedTournament = try await tournamentService.getTournament(id: tournament.id.uuidString)
+            
+            await MainActor.run {
+                // Check if there are any changes
+                let hasChanges = tournament.matches.count != updatedTournament.matches.count ||
+                    tournament.matches.contains { oldMatch in
+                        guard let newMatch = updatedTournament.matches.first(where: { $0.id == oldMatch.id }) else { return true }
+                        return oldMatch.status != newMatch.status || oldMatch.finalScore != newMatch.finalScore
+                    }
+                
+                if hasChanges {
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                        tournament = updatedTournament
+                        lastUpdateTime = Date()
+                    }
+                    
+                    // Haptic feedback for updates
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+            }
+        } catch {
+            print("Failed to refresh tournament data: \(error)")
+        }
+    }
 }
 
 // MARK: - Enhanced Match Card
@@ -1009,6 +1130,8 @@ struct EnhancedMatchDetailsView: View {
     let match: TournamentMatch
     let tournament: Tournament
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
+    @State private var showingScoreEntry = false
     
     var body: some View {
         NavigationView {
@@ -1025,6 +1148,11 @@ struct EnhancedMatchDetailsView: View {
                     
                     // Tournament context
                     tournamentContextSection
+                    
+                    // Score entry button (if user can enter scores)
+                    if canEnterScore {
+                        scoreEntryButton
+                    }
                 }
                 .padding()
             }
@@ -1036,6 +1164,10 @@ struct EnhancedMatchDetailsView: View {
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $showingScoreEntry) {
+                ScoreEntryView(match: match, tournament: tournament)
+                    .environmentObject(appState)
             }
         }
     }
@@ -1209,6 +1341,68 @@ struct EnhancedMatchDetailsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
         }
+    }
+    
+    private var canEnterScore: Bool {
+        guard let currentUser = appState.currentUser else { return false }
+        let userId = currentUser.id.uuidString
+        
+        // User can enter score if:
+        // 1. They are one of the players in the match
+        // 2. The match is ready to play or in progress
+        // 3. The match doesn't already have a result
+        
+        let isPlayer = match.player1ID == userId || match.player2ID == userId
+        let isMatchReady = match.status == "Ready" || match.status == "In Progress"
+        let hasNoResult = !match.hasResult
+        
+        return isPlayer && isMatchReady && hasNoResult
+    }
+    
+    private var scoreEntryButton: some View {
+        VStack(spacing: 16) {
+            Text("Ready to Play?")
+                .font(.headline)
+                .foregroundColor(.primary)
+            
+            Button {
+                showingScoreEntry = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "sportscourt.fill")
+                        .font(.title3)
+                    
+                    Text("Enter Match Score")
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        colors: [.green, .green.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(Capsule())
+                .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
+            }
+            
+            Text("Enter the score after completing your match")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.green.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(.green.opacity(0.3), lineWidth: 1)
+                )
+        )
     }
 }
 

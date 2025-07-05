@@ -946,6 +946,7 @@ final class FirebaseService {
             try await db.collection("tournaments").document(tournament.id.uuidString).setData(tournamentData)
         }
         
+        print("✅ Tournament created in Firebase: \(tournament.name) (ID: \(tournament.id.uuidString))")
         return tournament.id.uuidString
     }
     
@@ -956,6 +957,8 @@ final class FirebaseService {
         try await perform {
             try await db.collection("tournaments").document(tournament.id.uuidString).updateData(tournamentData)
         }
+        
+        print("✅ Tournament updated in Firebase: \(tournament.name)")
     }
     
     /// Gets a specific tournament
@@ -963,16 +966,31 @@ final class FirebaseService {
         let snapshot: DocumentSnapshot = try await perform {
             try await db.collection("tournaments").document(id).getDocument()
         }
-        guard let data = snapshot.data() else { throw FirebaseError.invalidUser }
-        return try decodeTournament(from: data, id: id)
+        guard let data = snapshot.data() else { 
+            print("❌ Tournament not found: \(id)")
+            throw FirebaseError.invalidUser 
+        }
+        
+        let tournament = try decodeTournament(from: data, id: id)
+        print("✅ Tournament fetched from Firebase: \(tournament.name)")
+        return tournament
     }
     
-    /// Gets all tournaments
-    func getAllTournaments() async throws -> [Tournament] {
+    /// Gets all tournaments with optional filtering
+    func getAllTournaments(status: String? = nil, limit: Int? = nil) async throws -> [Tournament] {
+        var query: Query = db.collection("tournaments")
+            .order(by: "startDate", descending: false)
+        
+        if let status = status {
+            query = query.whereField("status", isEqualTo: status)
+        }
+        
+        if let limit = limit {
+            query = query.limit(to: limit)
+        }
+        
         let snapshot = try await perform {
-            try await db.collection("tournaments")
-                .order(by: "startDate", descending: false)
-                .getDocuments()
+            try await query.getDocuments()
         }
         
         var tournaments: [Tournament] = []
@@ -981,19 +999,64 @@ final class FirebaseService {
                 tournaments.append(tournament)
             }
         }
+        
+        print("✅ Fetched \(tournaments.count) tournaments from Firebase")
         return tournaments
+    }
+    
+    /// Gets tournaments with pagination support
+    func getTournaments(
+        lastDocument: DocumentSnapshot? = nil,
+        limit: Int = 20,
+        status: String? = nil,
+        skillLevel: String? = nil
+    ) async throws -> (tournaments: [Tournament], lastDocument: DocumentSnapshot?) {
+        var query: Query = db.collection("tournaments")
+            .order(by: "startDate", descending: false)
+            .limit(to: limit)
+        
+        if let status = status {
+            query = query.whereField("status", isEqualTo: status)
+        }
+        
+        if let skillLevel = skillLevel {
+            query = query.whereField("skillLevel", isEqualTo: skillLevel)
+        }
+        
+        if let lastDoc = lastDocument {
+            query = query.start(afterDocument: lastDoc)
+        }
+        
+        let snapshot = try await perform {
+            try await query.getDocuments()
+        }
+        
+        var tournaments: [Tournament] = []
+        for doc in snapshot.documents {
+            if let tournament = try? decodeTournament(from: doc.data(), id: doc.documentID) {
+                tournaments.append(tournament)
+            }
+        }
+        
+        let lastDoc = snapshot.documents.last
+        print("✅ Fetched \(tournaments.count) tournaments (paginated) from Firebase")
+        return (tournaments, lastDoc)
     }
     
     /// Real-time tournament listener
     func observeTournament(id: String, onChange: @escaping (Result<Tournament, Error>) -> Void) -> ListenerHandle {
+        print("🔄 Setting up real-time listener for tournament: \(id)")
         let listener = db.collection("tournaments").document(id).addSnapshotListener { snapshot, error in
             if let error {
+                print("❌ Tournament listener error: \(error)")
                 onChange(.failure(self.mapFirestoreError(error)))
             } else if let snap = snapshot, let data = snap.data() {
                 do {
                     let tournament = try self.decodeTournament(from: data, id: id)
+                    print("🔄 Tournament updated via listener: \(tournament.name)")
                     onChange(.success(tournament))
                 } catch {
+                    print("❌ Tournament decode error: \(error)")
                     onChange(.failure(error))
                 }
             }
@@ -1001,12 +1064,36 @@ final class FirebaseService {
         return ListenerHandle { listener.remove() }
     }
     
+    /// Real-time listener for all tournaments
+    func observeAllTournaments(onChange: @escaping (Result<[Tournament], Error>) -> Void) -> ListenerHandle {
+        print("🔄 Setting up real-time listener for all tournaments")
+        let listener = db.collection("tournaments")
+            .order(by: "startDate", descending: false)
+            .addSnapshotListener { snapshot, error in
+                if let error {
+                    print("❌ All tournaments listener error: \(error)")
+                    onChange(.failure(self.mapFirestoreError(error)))
+                } else if let snap = snapshot {
+                    var tournaments: [Tournament] = []
+                    for doc in snap.documents {
+                        if let tournament = try? self.decodeTournament(from: doc.data(), id: doc.documentID) {
+                            tournaments.append(tournament)
+                        }
+                    }
+                    print("🔄 All tournaments updated via listener: \(tournaments.count) tournaments")
+                    onChange(.success(tournaments))
+                }
+            }
+        return ListenerHandle { listener.remove() }
+    }
+    
     /// Gets tournaments where user is registered
     func getUserTournaments(userId: String) async throws -> [Tournament] {
+        print("🔍 Fetching tournaments for user: \(userId)")
         let snapshot = try await perform {
             try await db.collection("tournaments")
                 .whereField("participantIds", arrayContains: userId)
-                .order(by: "startDate", descending: false)
+                .order(by: "startDate", descending: true) // Most recent first for user tournaments
                 .getDocuments()
         }
         
@@ -1016,109 +1103,878 @@ final class FirebaseService {
                 tournaments.append(tournament)
             }
         }
+        
+        print("✅ Found \(tournaments.count) tournaments for user: \(userId)")
         return tournaments
+    }
+    
+    /// Registers a user for a tournament
+    func registerForTournament(tournamentId: String, participant: TournamentParticipant) async throws {
+        print("📝 Registering participant: \(participant.displayName) for tournament: \(tournamentId)")
+        
+        let tournamentRef = db.collection("tournaments").document(tournamentId)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let tournamentDoc: DocumentSnapshot
+            do {
+                tournamentDoc = try transaction.getDocument(tournamentRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = tournamentDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var tournament = try? self.decodeTournament(from: data, id: tournamentId) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Check if user is already registered
+            if tournament.participants.contains(where: { $0.userID == participant.userID }) {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User already registered"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Check if tournament is full
+            if tournament.participants.count >= tournament.maxParticipants {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament is full"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Add participant
+            tournament.participants.append(participant)
+            
+            // Update status if needed
+            if tournament.participants.count >= tournament.maxParticipants {
+                tournament.status = "Registration Closed"
+            }
+            
+            // Update tournament
+            let updatedData = self.encodeTournament(tournament)
+            transaction.updateData(updatedData, forDocument: tournamentRef)
+            
+            return nil
+        }
+        
+        print("✅ Successfully registered participant: \(participant.displayName)")
+    }
+    
+    /// Removes a user from a tournament
+    func leaveTournament(tournamentId: String, userId: String) async throws {
+        print("🚪 User leaving tournament: \(userId) from \(tournamentId)")
+        
+        let tournamentRef = db.collection("tournaments").document(tournamentId)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let tournamentDoc: DocumentSnapshot
+            do {
+                tournamentDoc = try transaction.getDocument(tournamentRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = tournamentDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var tournament = try? self.decodeTournament(from: data, id: tournamentId) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Find and remove participant
+            let originalCount = tournament.participants.count
+            tournament.participants.removeAll { $0.userID == userId }
+            
+            if tournament.participants.count == originalCount {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not found in tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Update status if needed
+            if tournament.status == "Registration Closed" && tournament.participants.count < tournament.maxParticipants {
+                tournament.status = "Registration Open"
+            }
+            
+            // Update tournament
+            let updatedData = self.encodeTournament(tournament)
+            transaction.updateData(updatedData, forDocument: tournamentRef)
+            
+            return nil
+        }
+        
+        print("✅ Successfully removed user from tournament")
     }
     
     /// Updates tournament match result
     func updateTournamentMatch(tournamentId: String, match: TournamentMatch) async throws {
-        let matchData = encodeTournamentMatch(match)
+        print("🏓 Updating match result: \(match.displayName) in tournament: \(tournamentId)")
         
-        try await perform {
-            try await db.collection("tournaments").document(tournamentId)
-                .collection("matches").document(match.id.uuidString).setData(matchData)
+        let tournamentRef = db.collection("tournaments").document(tournamentId)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let tournamentDoc: DocumentSnapshot
+            do {
+                tournamentDoc = try transaction.getDocument(tournamentRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = tournamentDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var tournament = try? self.decodeTournament(from: data, id: tournamentId) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Find and update the match
+            if let matchIndex = tournament.matches.firstIndex(where: { $0.id == match.id }) {
+                tournament.matches[matchIndex] = match
+                
+                // Update participant records if match is completed
+                if match.status == "Completed", let winnerID = match.winnerID, let loserID = match.loserID {
+                    if let winnerIndex = tournament.participants.firstIndex(where: { $0.userID == winnerID }) {
+                        tournament.participants[winnerIndex].wins += 1
+                    }
+                    if let loserIndex = tournament.participants.firstIndex(where: { $0.userID == loserID }) {
+                        tournament.participants[loserIndex].losses += 1
+                    }
+                }
+                
+                // Check if tournament is complete
+                let completedMatches = tournament.matches.filter { $0.status == "Completed" }
+                let totalMatches = tournament.matches.count
+                
+                if completedMatches.count == totalMatches && totalMatches > 0 {
+                    tournament.status = "Completed"
+                    // Calculate final placements
+                    self.calculateFinalPlacements(&tournament)
+                }
+                
+                let updatedData = self.encodeTournament(tournament)
+                transaction.updateData(updatedData, forDocument: tournamentRef)
+            } else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Match not found in tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            return nil
         }
+        
+        print("✅ Successfully updated match result")
     }
     
     /// Batch update tournament matches
     func updateTournamentMatches(tournamentId: String, matches: [TournamentMatch]) async throws {
-        let batch = db.batch()
+        print("🏓 Batch updating \(matches.count) matches in tournament: \(tournamentId)")
         
-        for match in matches {
-            let matchRef = db.collection("tournaments").document(tournamentId)
-                .collection("matches").document(match.id.uuidString)
-            let matchData = encodeTournamentMatch(match)
-            batch.setData(matchData, forDocument: matchRef)
+        let tournamentRef = db.collection("tournaments").document(tournamentId)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let tournamentDoc: DocumentSnapshot
+            do {
+                tournamentDoc = try transaction.getDocument(tournamentRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = tournamentDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var tournament = try? self.decodeTournament(from: data, id: tournamentId) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Update all matches
+            for updatedMatch in matches {
+                if let matchIndex = tournament.matches.firstIndex(where: { $0.id == updatedMatch.id }) {
+                    tournament.matches[matchIndex] = updatedMatch
+                }
+            }
+            
+            let updatedData = self.encodeTournament(tournament)
+            transaction.updateData(updatedData, forDocument: tournamentRef)
+            
+            return nil
         }
         
-        try await batch.commit()
+        print("✅ Successfully batch updated matches")
+    }
+    
+    /// Deletes a tournament (for organizers only)
+    func deleteTournament(tournamentId: String, organizerId: String) async throws {
+        print("🗑️ Deleting tournament: \(tournamentId) by organizer: \(organizerId)")
+        
+        // First verify the user is the organizer
+        let tournament = try await getTournament(id: tournamentId)
+        guard tournament.organizerID == organizerId else {
+            throw FirebaseError.invalidUser
+        }
+        
+        try await perform {
+            try await db.collection("tournaments").document(tournamentId).delete()
+        }
+        
+        print("✅ Tournament deleted successfully")
+    }
+    
+    /// Search tournaments by name or venue
+    func searchTournaments(query: String, limit: Int = 20) async throws -> [Tournament] {
+        print("🔍 Searching tournaments with query: \(query)")
+        
+        // Firebase doesn't support full-text search, so we'll do a simple name search
+        let snapshot = try await perform {
+            try await db.collection("tournaments")
+                .whereField("name", isGreaterThanOrEqualTo: query)
+                .whereField("name", isLessThan: query + "\u{f8ff}")
+                .limit(to: limit)
+                .getDocuments()
+        }
+        
+        var tournaments: [Tournament] = []
+        for doc in snapshot.documents {
+            if let tournament = try? decodeTournament(from: doc.data(), id: doc.documentID) {
+                tournaments.append(tournament)
+            }
+        }
+        
+        print("✅ Found \(tournaments.count) tournaments matching query: \(query)")
+        return tournaments
+    }
+    
+    /// Gets tournaments by organizer
+    func getTournamentsByOrganizer(organizerId: String) async throws -> [Tournament] {
+        print("🔍 Fetching tournaments by organizer: \(organizerId)")
+        
+        let snapshot = try await perform {
+            try await db.collection("tournaments")
+                .whereField("organizerID", isEqualTo: organizerId)
+                .order(by: "startDate", descending: true)
+                .getDocuments()
+        }
+        
+        var tournaments: [Tournament] = []
+        for doc in snapshot.documents {
+            if let tournament = try? decodeTournament(from: doc.data(), id: doc.documentID) {
+                tournaments.append(tournament)
+            }
+        }
+        
+        print("✅ Found \(tournaments.count) tournaments by organizer: \(organizerId)")
+        return tournaments
+    }
+    
+    // MARK: - Enhanced Tournament Methods for Scalability
+    
+    /// Batch register multiple participants for a tournament
+    func batchRegisterParticipants(tournamentId: String, participants: [TournamentParticipant]) async throws {
+        print("📝 Batch registering \(participants.count) participants for tournament: \(tournamentId)")
+        
+        let tournamentRef = db.collection("tournaments").document(tournamentId)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let tournamentDoc: DocumentSnapshot
+            do {
+                tournamentDoc = try transaction.getDocument(tournamentRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = tournamentDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var tournament = try? self.decodeTournament(from: data, id: tournamentId) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Check if tournament can accommodate all participants
+            let availableSlots = tournament.maxParticipants - tournament.participants.count
+            if participants.count > availableSlots {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not enough slots available. Need \(participants.count), but only \(availableSlots) available."])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Check for duplicate registrations
+            for participant in participants {
+                if tournament.participants.contains(where: { $0.userID == participant.userID }) {
+                    let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User \(participant.displayName) already registered"])
+                    errorPointer?.pointee = error
+                    return nil
+                }
+            }
+            
+            // Add all participants
+            tournament.participants.append(contentsOf: participants)
+            
+            // Update status if needed
+            if tournament.participants.count >= tournament.maxParticipants {
+                tournament.status = "Registration Closed"
+            }
+            
+            let updatedData = self.encodeTournament(tournament)
+            transaction.updateData(updatedData, forDocument: tournamentRef)
+            
+            return nil
+        }
+        
+        print("✅ Successfully batch registered \(participants.count) participants")
+    }
+    
+    /// Get tournaments with advanced filtering and pagination
+    func getFilteredTournaments(
+        status: [String]? = nil,
+        skillLevels: [String]? = nil,
+        formats: [String]? = nil,
+        location: (latitude: Double, longitude: Double, radiusKm: Double)? = nil,
+        startDateRange: (from: Date, to: Date)? = nil,
+        lastDocument: DocumentSnapshot? = nil,
+        limit: Int = 20
+    ) async throws -> (tournaments: [Tournament], lastDocument: DocumentSnapshot?) {
+        
+        var query: Query = db.collection("tournaments")
+            .order(by: "startDate", descending: false)
+            .limit(to: limit)
+        
+        // Apply status filter
+        if let statuses = status, !statuses.isEmpty {
+            query = query.whereField("status", in: statuses)
+        }
+        
+        // Apply skill level filter
+        if let skillLevels = skillLevels, !skillLevels.isEmpty {
+            query = query.whereField("skillLevel", in: skillLevels)
+        }
+        
+        // Apply format filter
+        if let formats = formats, !formats.isEmpty {
+            query = query.whereField("format", in: formats)
+        }
+        
+        // Apply date range filter
+        if let dateRange = startDateRange {
+            query = query
+                .whereField("startDate", isGreaterThanOrEqualTo: dateRange.from)
+                .whereField("startDate", isLessThanOrEqualTo: dateRange.to)
+        }
+        
+        // Apply pagination
+        if let lastDoc = lastDocument {
+            query = query.start(afterDocument: lastDoc)
+        }
+        
+        let snapshot = try await perform {
+            try await query.getDocuments()
+        }
+        
+        var tournaments: [Tournament] = []
+        for doc in snapshot.documents {
+            if let tournament = try? decodeTournament(from: doc.data(), id: doc.documentID) {
+                tournaments.append(tournament)
+            }
+        }
+        
+        // Apply location filter if specified (client-side filtering)
+        if location != nil {
+            tournaments = tournaments.filter { tournament in
+                // For now, we'll skip location filtering since we don't have coordinates in Tournament model
+                // In a real implementation, you'd add latitude/longitude fields to Tournament
+                return true
+            }
+        }
+        
+        let lastDoc = snapshot.documents.last
+        print("✅ Fetched \(tournaments.count) filtered tournaments")
+        return (tournaments, lastDoc)
+    }
+    
+    /// Get tournament statistics for analytics
+    func getTournamentStatistics(organizerId: String? = nil) async throws -> TournamentStatistics {
+        var query: Query = db.collection("tournaments")
+        
+        if let organizerId = organizerId {
+            query = query.whereField("organizerID", isEqualTo: organizerId)
+        }
+        
+        let snapshot = try await perform {
+            try await query.getDocuments()
+        }
+        
+        var statistics = TournamentStatistics()
+        
+        for doc in snapshot.documents {
+            if let tournament = try? decodeTournament(from: doc.data(), id: doc.documentID) {
+                statistics.totalTournaments += 1
+                statistics.totalParticipants += tournament.participants.count
+                
+                switch tournament.status {
+                case "Registration Open":
+                    statistics.openTournaments += 1
+                case "In Progress":
+                    statistics.activeTournaments += 1
+                case "Completed":
+                    statistics.completedTournaments += 1
+                default:
+                    break
+                }
+                
+                if tournament.participants.count >= tournament.maxParticipants {
+                    statistics.fullTournaments += 1
+                }
+            }
+        }
+        
+        print("✅ Tournament statistics calculated: \(statistics.totalTournaments) total tournaments")
+        return statistics
+    }
+    
+    /// Enhanced real-time tournament collection listener with filtering
+    func observeFilteredTournaments(
+        status: [String]? = nil,
+        limit: Int = 50,
+        onChange: @escaping (Result<[Tournament], Error>) -> Void
+    ) -> ListenerHandle {
+        print("🔄 Setting up filtered tournament listener")
+        
+        var query: Query = db.collection("tournaments")
+            .order(by: "startDate", descending: false)
+            .limit(to: limit)
+        
+        if let statuses = status, !statuses.isEmpty {
+            query = query.whereField("status", in: statuses)
+        }
+        
+        let listener = query.addSnapshotListener { snapshot, error in
+            if let error = error {
+                print("❌ Filtered tournaments listener error: \(error)")
+                onChange(.failure(self.mapFirestoreError(error)))
+            } else if let snap = snapshot {
+                var tournaments: [Tournament] = []
+                for doc in snap.documents {
+                    if let tournament = try? self.decodeTournament(from: doc.data(), id: doc.documentID) {
+                        tournaments.append(tournament)
+                    }
+                }
+                print("🔄 Filtered tournaments updated: \(tournaments.count) tournaments")
+                onChange(.success(tournaments))
+            }
+        }
+        
+        return ListenerHandle { listener.remove() }
+    }
+    
+    /// Bulk update tournament matches (for bracket progression)
+    func bulkUpdateTournamentMatches(tournamentId: String, matches: [TournamentMatch], updateStatus: Bool = true) async throws {
+        print("🏓 Bulk updating \(matches.count) matches in tournament: \(tournamentId)")
+        
+        let tournamentRef = db.collection("tournaments").document(tournamentId)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let tournamentDoc: DocumentSnapshot
+            do {
+                tournamentDoc = try transaction.getDocument(tournamentRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = tournamentDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var tournament = try? self.decodeTournament(from: data, id: tournamentId) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Update matches
+            for updatedMatch in matches {
+                if let matchIndex = tournament.matches.firstIndex(where: { $0.id == updatedMatch.id }) {
+                    tournament.matches[matchIndex] = updatedMatch
+                    
+                    // Update participant records if match is completed
+                    if updatedMatch.status == "Completed", let winnerID = updatedMatch.winnerID, let loserID = updatedMatch.loserID {
+                        if let winnerIndex = tournament.participants.firstIndex(where: { $0.userID == winnerID }) {
+                            tournament.participants[winnerIndex].wins += 1
+                        }
+                        if let loserIndex = tournament.participants.firstIndex(where: { $0.userID == loserID }) {
+                            tournament.participants[loserIndex].losses += 1
+                        }
+                    }
+                }
+            }
+            
+            // Check tournament completion if requested
+            if updateStatus {
+                let completedMatches = tournament.matches.filter { $0.status == "Completed" }
+                let totalMatches = tournament.matches.count
+                
+                if completedMatches.count == totalMatches && totalMatches > 0 {
+                    tournament.status = "Completed"
+                    self.calculateFinalPlacements(&tournament)
+                }
+            }
+            
+            let updatedData = self.encodeTournament(tournament)
+            transaction.updateData(updatedData, forDocument: tournamentRef)
+            
+            return nil
+        }
+        
+        print("✅ Successfully bulk updated matches")
+    }
+    
+    /// Start tournament with bracket generation
+    func startTournamentWithBracket(tournamentId: String, matches: [TournamentMatch]) async throws {
+        print("🏁 Starting tournament with bracket: \(tournamentId)")
+        
+        let tournamentRef = db.collection("tournaments").document(tournamentId)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let tournamentDoc: DocumentSnapshot
+            do {
+                tournamentDoc = try transaction.getDocument(tournamentRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = tournamentDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var tournament = try? self.decodeTournament(from: data, id: tournamentId) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Validate tournament can be started
+            guard tournament.status == "Registration Closed" || tournament.status == "Registration Open" else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Tournament cannot be started from status: \(tournament.status)"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard tournament.participants.count >= 4 else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Need at least 4 participants to start tournament"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Update tournament
+            tournament.status = "In Progress"
+            tournament.matches = matches
+            
+            let updatedData = self.encodeTournament(tournament)
+            transaction.updateData(updatedData, forDocument: tournamentRef)
+            
+            return nil
+        }
+        
+        print("✅ Tournament started successfully with \(matches.count) matches")
+    }
+    
+    /// Get tournament leaderboard
+    func getTournamentLeaderboard(limit: Int = 50) async throws -> [TournamentLeaderboardEntry] {
+        print("🏆 Fetching tournament leaderboard")
+        
+        // Get all completed tournaments
+        let snapshot = try await perform {
+            try await db.collection("tournaments")
+                .whereField("status", isEqualTo: "Completed")
+                .order(by: "endDate", descending: true)
+                .limit(to: 100)
+                .getDocuments()
+        }
+        
+        var playerStats: [String: TournamentLeaderboardEntry] = [:]
+        
+        for doc in snapshot.documents {
+            if let tournament = try? decodeTournament(from: doc.data(), id: doc.documentID) {
+                for participant in tournament.participants {
+                    let userId = participant.userID
+                    
+                    if var entry = playerStats[userId] {
+                        entry.tournamentsPlayed += 1
+                        entry.totalWins += participant.wins
+                        entry.totalLosses += participant.losses
+                        
+                        if let placement = participant.placement {
+                            if placement == 1 {
+                                entry.championships += 1
+                            }
+                            entry.totalPlacement += placement
+                        }
+                        
+                        playerStats[userId] = entry
+                    } else {
+                        let placement = participant.placement ?? 999
+                        let entry = TournamentLeaderboardEntry(
+                            userId: userId,
+                            displayName: participant.displayName,
+                            tournamentsPlayed: 1,
+                            championships: placement == 1 ? 1 : 0,
+                            totalWins: participant.wins,
+                            totalLosses: participant.losses,
+                            totalPlacement: placement,
+                            averageRank: Double(placement),
+                            winRate: 0.0,
+                            points: 0
+                        )
+                        playerStats[userId] = entry
+                    }
+                }
+            }
+        }
+        
+        // Calculate final stats and sort
+        var leaderboard = playerStats.values.map { entry in
+            var finalEntry = entry
+            finalEntry.averageRank = Double(finalEntry.totalPlacement) / Double(finalEntry.tournamentsPlayed)
+            finalEntry.winRate = finalEntry.totalWins + finalEntry.totalLosses > 0 ? 
+                Double(finalEntry.totalWins) / Double(finalEntry.totalWins + finalEntry.totalLosses) : 0.0
+            
+            // Calculate points (championships worth more)
+            finalEntry.points = finalEntry.championships * 100 + finalEntry.totalWins * 3 - Int(finalEntry.averageRank)
+            
+            return finalEntry
+        }
+        
+        leaderboard.sort { $0.points > $1.points }
+        
+        print("✅ Generated leaderboard with \(leaderboard.count) players")
+        return Array(leaderboard.prefix(limit))
     }
 
-    // MARK: - Tournament Encoding/Decoding
+    // MARK: - Tournament Helper Methods
     
-    private func encodeTournament(_ tournament: Tournament) -> [String: Any] {
-        let participantIds = tournament.participants.map { $0.userID }
+    /// Calculates final placements for completed tournament
+    private func calculateFinalPlacements(_ tournament: inout Tournament) {
+        print("🏆 Calculating final placements for tournament: \(tournament.name)")
         
-        return [
-            "id": tournament.id.uuidString,
+        // Sort participants by wins, then by losses (ascending)
+        let sortedParticipants = tournament.participants.sorted { p1, p2 in
+            if p1.wins != p2.wins {
+                return p1.wins > p2.wins
+            }
+            return p1.losses < p2.losses
+        }
+        
+        for (index, participant) in sortedParticipants.enumerated() {
+            if let participantIndex = tournament.participants.firstIndex(where: { $0.id == participant.id }) {
+                tournament.participants[participantIndex].placement = index + 1
+            }
+        }
+        
+        // Log final standings
+        for participant in tournament.participants.sorted(by: { ($0.placement ?? 999) < ($1.placement ?? 999) }) {
+            if let placement = participant.placement {
+                print("🏆 \(placement). \(participant.displayName) - \(participant.wins)W/\(participant.losses)L")
+            }
+        }
+    }
+    
+    // MARK: - Tournament Encoding/Decoding Methods
+    
+    /// Encodes a Tournament object to Firestore data
+    private func encodeTournament(_ tournament: Tournament) -> [String: Any] {
+        var data: [String: Any] = [
             "name": tournament.name,
             "description": tournament.description,
             "type": tournament.type,
             "format": tournament.format,
             "skillLevel": tournament.skillLevel,
             "maxParticipants": tournament.maxParticipants,
-            "startDate": Timestamp(date: tournament.startDate),
-            "endDate": Timestamp(date: tournament.endDate),
+            "startDate": tournament.startDate,
+            "endDate": tournament.endDate,
             "status": tournament.status,
             "organizerID": tournament.organizerID,
             "organizerName": tournament.organizerName,
             "venueName": tournament.venueName,
             "venueAddress": tournament.venueAddress,
-            "participants": tournament.participants.map { encodeTournamentParticipant($0) },
-            "matches": tournament.matches.map { encodeTournamentMatch($0) },
-            "participantIds": participantIds, // For querying
-            "createdAt": FieldValue.serverTimestamp(),
-            "updatedAt": FieldValue.serverTimestamp()
+            "updatedAt": Date()
         ]
+        
+        // Encode participants
+        let participantsData = tournament.participants.map { participant in
+            return [
+                "id": participant.id.uuidString,
+                "userID": participant.userID,
+                "displayName": participant.displayName,
+                "elo": participant.elo,
+                "status": participant.status,
+                "placement": participant.placement as Any,
+                "isEliminated": participant.isEliminated,
+                "wins": participant.wins,
+                "losses": participant.losses,
+                "partnerID": participant.partnerID as Any,
+                "partnerName": participant.partnerName as Any,
+                "teamName": participant.teamName as Any
+            ]
+        }
+        data["participants"] = participantsData
+        
+        // Encode matches
+        let matchesData = tournament.matches.map { match in
+            return [
+                "id": match.id.uuidString,
+                "round": match.round,
+                "bracket": match.bracket,
+                "matchNumber": match.matchNumber,
+                "player1ID": match.player1ID,
+                "player2ID": match.player2ID,
+                "player1Name": match.player1Name,
+                "player2Name": match.player2Name,
+                "winnerID": match.winnerID as Any,
+                "loserID": match.loserID as Any,
+                "status": match.status,
+                "finalScore": match.finalScore,
+                "isBye": match.isBye,
+                "isGrandFinalReset": match.isGrandFinalReset,
+                "scheduledTime": match.scheduledTime as Any,
+                "court": match.court as Any,
+                "notes": match.notes
+            ]
+        }
+        data["matches"] = matchesData
+        
+        return data
     }
     
-    private func decodeTournament(from dict: [String: Any], id: String) throws -> Tournament {
-        guard let name = dict["name"] as? String,
-              let description = dict["description"] as? String,
-              let type = dict["type"] as? String,
-              let format = dict["format"] as? String,
-              let skillLevel = dict["skillLevel"] as? String,
-              let maxParticipants = dict["maxParticipants"] as? Int,
-              let startDateTimestamp = dict["startDate"] as? Timestamp,
-              let endDateTimestamp = dict["endDate"] as? Timestamp,
-              let status = dict["status"] as? String,
-              let organizerID = dict["organizerID"] as? String,
-              let organizerName = dict["organizerName"] as? String else {
+    /// Decodes Firestore data to a Tournament object
+    private func decodeTournament(from data: [String: Any], id: String) throws -> Tournament {
+        guard let name = data["name"] as? String,
+              let description = data["description"] as? String,
+              let type = data["type"] as? String,
+              let format = data["format"] as? String,
+              let skillLevel = data["skillLevel"] as? String,
+              let maxParticipants = data["maxParticipants"] as? Int,
+              let startDate = (data["startDate"] as? Timestamp)?.dateValue(),
+              let endDate = (data["endDate"] as? Timestamp)?.dateValue(),
+              let status = data["status"] as? String,
+              let organizerID = data["organizerID"] as? String,
+              let organizerName = data["organizerName"] as? String,
+              let venueName = data["venueName"] as? String,
+              let venueAddress = data["venueAddress"] as? String else {
             throw FirebaseError.decoding
         }
         
-        let venueName = dict["venueName"] as? String ?? ""
-        let venueAddress = dict["venueAddress"] as? String ?? ""
+        // Decode participants
+        var participants: [TournamentParticipant] = []
+        if let participantsData = data["participants"] as? [[String: Any]] {
+            for participantData in participantsData {
+                if let idString = participantData["id"] as? String,
+                   let id = UUID(uuidString: idString),
+                   let userID = participantData["userID"] as? String,
+                   let displayName = participantData["displayName"] as? String,
+                   let elo = participantData["elo"] as? Int {
+                    
+                    let participant = TournamentParticipant(
+                        id: id,
+                        userID: userID,
+                        displayName: displayName,
+                        elo: elo,
+                        status: participantData["status"] as? String ?? "Registered",
+                        placement: participantData["placement"] as? Int,
+                        isEliminated: participantData["isEliminated"] as? Bool ?? false,
+                        wins: participantData["wins"] as? Int ?? 0,
+                        losses: participantData["losses"] as? Int ?? 0,
+                        partnerID: participantData["partnerID"] as? String,
+                        partnerName: participantData["partnerName"] as? String,
+                        teamName: participantData["teamName"] as? String
+                    )
+                    participants.append(participant)
+                }
+            }
+        }
         
-        let participantsData = dict["participants"] as? [[String: Any]] ?? []
-        let participants = participantsData.compactMap { try? decodeTournamentParticipant(from: $0) }
+        // Decode matches
+        var matches: [TournamentMatch] = []
+        if let matchesData = data["matches"] as? [[String: Any]] {
+            for matchData in matchesData {
+                if let idString = matchData["id"] as? String,
+                   let id = UUID(uuidString: idString),
+                   let round = matchData["round"] as? Int,
+                   let bracket = matchData["bracket"] as? String,
+                   let matchNumber = matchData["matchNumber"] as? Int,
+                   let player1ID = matchData["player1ID"] as? String,
+                   let player2ID = matchData["player2ID"] as? String,
+                   let player1Name = matchData["player1Name"] as? String,
+                   let player2Name = matchData["player2Name"] as? String,
+                   let status = matchData["status"] as? String {
+                    
+                    let match = TournamentMatch(
+                        id: id,
+                        round: round,
+                        bracket: bracket,
+                        matchNumber: matchNumber,
+                        player1ID: player1ID,
+                        player2ID: player2ID,
+                        player1Name: player1Name,
+                        player2Name: player2Name,
+                        winnerID: matchData["winnerID"] as? String,
+                        loserID: matchData["loserID"] as? String,
+                        status: status,
+                        finalScore: matchData["finalScore"] as? String ?? "",
+                        isBye: matchData["isBye"] as? Bool ?? false,
+                        isGrandFinalReset: matchData["isGrandFinalReset"] as? Bool ?? false,
+                        scheduledTime: (matchData["scheduledTime"] as? Timestamp)?.dateValue(),
+                        court: matchData["court"] as? Int,
+                        notes: matchData["notes"] as? String ?? ""
+                    )
+                    matches.append(match)
+                }
+            }
+        }
         
-        let matchesData = dict["matches"] as? [[String: Any]] ?? []
-        let matches = matchesData.compactMap { try? decodeTournamentMatch(from: $0) }
-        
-        var tournament = Tournament(
-            name: name,
-            description: description,
-            format: format,  
-            skillLevel: skillLevel,
-            maxParticipants: maxParticipants,
-            startDate: startDateTimestamp.dateValue(),
-            organizerID: organizerID,
-            organizerName: organizerName,
-            venueName: venueName,
-            venueAddress: venueAddress
-        )
-        
-        // Update fields that can't be set in init
-        tournament = Tournament(
-            id: UUID(uuidString: id) ?? tournament.id,
+        return Tournament(
+            id: UUID(uuidString: id) ?? UUID(),
             name: name,
             description: description,
             type: type,
             format: format,
             skillLevel: skillLevel,
             maxParticipants: maxParticipants,
-            startDate: startDateTimestamp.dateValue(),
-            endDate: endDateTimestamp.dateValue(),
+            startDate: startDate,
+            endDate: endDate,
             status: status,
             organizerID: organizerID,
             organizerName: organizerName,
@@ -1127,163 +1983,5 @@ final class FirebaseService {
             participants: participants,
             matches: matches
         )
-        
-        return tournament
-    }
-    
-    private func encodeTournamentParticipant(_ participant: TournamentParticipant) -> [String: Any] {
-        var data: [String: Any] = [
-            "id": participant.id.uuidString,
-            "userID": participant.userID,
-            "displayName": participant.displayName,
-            "elo": participant.elo,
-            "status": participant.status,
-            "isEliminated": participant.isEliminated,
-            "wins": participant.wins,
-            "losses": participant.losses
-        ]
-        
-        if let placement = participant.placement {
-            data["placement"] = placement
-        }
-        if let partnerID = participant.partnerID {
-            data["partnerID"] = partnerID
-        }
-        if let partnerName = participant.partnerName {
-            data["partnerName"] = partnerName
-        }
-        if let teamName = participant.teamName {
-            data["teamName"] = teamName
-        }
-        
-        return data
-    }
-    
-    private func decodeTournamentParticipant(from dict: [String: Any]) throws -> TournamentParticipant {
-        guard let idString = dict["id"] as? String,
-              let id = UUID(uuidString: idString),
-              let userID = dict["userID"] as? String,
-              let displayName = dict["displayName"] as? String,
-              let elo = dict["elo"] as? Int,
-              let status = dict["status"] as? String,
-              let isEliminated = dict["isEliminated"] as? Bool,
-              let wins = dict["wins"] as? Int,
-              let losses = dict["losses"] as? Int else {
-            throw FirebaseError.decoding
-        }
-        
-        var participant = TournamentParticipant(
-            userID: userID,
-            displayName: displayName,
-            elo: elo,
-            partnerID: dict["partnerID"] as? String,
-            partnerName: dict["partnerName"] as? String,
-            teamName: dict["teamName"] as? String
-        )
-        
-        // Update mutable properties
-        participant = TournamentParticipant(
-            id: id,
-            userID: userID,
-            displayName: displayName,
-            elo: elo,
-            status: status,
-            placement: dict["placement"] as? Int,
-            isEliminated: isEliminated,
-            wins: wins,
-            losses: losses,
-            partnerID: dict["partnerID"] as? String,
-            partnerName: dict["partnerName"] as? String,
-            teamName: dict["teamName"] as? String
-        )
-        
-        return participant
-    }
-    
-    private func encodeTournamentMatch(_ match: TournamentMatch) -> [String: Any] {
-        var data: [String: Any] = [
-            "id": match.id.uuidString,
-            "round": match.round,
-            "bracket": match.bracket,
-            "matchNumber": match.matchNumber,
-            "player1ID": match.player1ID,
-            "player2ID": match.player2ID,
-            "player1Name": match.player1Name,
-            "player2Name": match.player2Name,
-            "status": match.status,
-            "finalScore": match.finalScore,
-            "isBye": match.isBye,
-            "isGrandFinalReset": match.isGrandFinalReset,
-            "notes": match.notes
-        ]
-        
-        if let winnerID = match.winnerID {
-            data["winnerID"] = winnerID
-        }
-        if let loserID = match.loserID {
-            data["loserID"] = loserID
-        }
-        if let scheduledTime = match.scheduledTime {
-            data["scheduledTime"] = Timestamp(date: scheduledTime)
-        }
-        if let court = match.court {
-            data["court"] = court
-        }
-        
-        return data
-    }
-    
-    private func decodeTournamentMatch(from dict: [String: Any]) throws -> TournamentMatch {
-        guard let idString = dict["id"] as? String,
-              let id = UUID(uuidString: idString),
-              let round = dict["round"] as? Int,
-              let bracket = dict["bracket"] as? String,
-              let matchNumber = dict["matchNumber"] as? Int,
-              let player1ID = dict["player1ID"] as? String,
-              let player2ID = dict["player2ID"] as? String,
-              let player1Name = dict["player1Name"] as? String,
-              let player2Name = dict["player2Name"] as? String,
-              let status = dict["status"] as? String,
-              let finalScore = dict["finalScore"] as? String,
-              let isBye = dict["isBye"] as? Bool,
-              let isGrandFinalReset = dict["isGrandFinalReset"] as? Bool,
-              let notes = dict["notes"] as? String else {
-            throw FirebaseError.decoding
-        }
-        
-        let scheduledTime = (dict["scheduledTime"] as? Timestamp)?.dateValue()
-        
-        var match = TournamentMatch(
-            round: round,
-            bracket: bracket,
-            matchNumber: matchNumber,
-            player1ID: player1ID,
-            player1Name: player1Name,
-            player2ID: player2ID,
-            player2Name: player2Name
-        )
-        
-        // Update mutable properties
-        match = TournamentMatch(
-            id: id,
-            round: round,
-            bracket: bracket,
-            matchNumber: matchNumber,
-            player1ID: player1ID,
-            player2ID: player2ID,
-            player1Name: player1Name,
-            player2Name: player2Name,
-            winnerID: dict["winnerID"] as? String,
-            loserID: dict["loserID"] as? String,
-            status: status,
-            finalScore: finalScore,
-            isBye: isBye,
-            isGrandFinalReset: isGrandFinalReset,
-            scheduledTime: scheduledTime,
-            court: dict["court"] as? Int,
-            notes: notes
-        )
-        
-        return match
     }
 } 

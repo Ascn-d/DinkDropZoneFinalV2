@@ -98,34 +98,21 @@ class TournamentService: ObservableObject {
         }
     }
     
-    /// Enhanced tournament registration with validation and batch processing
+    /// Enhanced tournament registration with validation and Firebase integration
     func registerForTournament(_ tournament: Tournament, participant: TournamentParticipant) async throws {
         try validateRegistration(tournament: tournament, participant: participant)
         
-        var updatedTournament = tournament
+        // Use Firebase service to register participant with transaction safety
+        try await firebaseService.registerForTournament(
+            tournamentId: tournament.id.uuidString,
+            participant: participant
+        )
         
-        // Check for existing registration
-        if updatedTournament.participants.contains(where: { $0.userID == participant.userID }) {
-            throw TournamentError.alreadyRegistered
-        }
+        // Refresh tournament data from Firebase to get updated state
+        let updatedTournament = try await firebaseService.getTournament(id: tournament.id.uuidString)
         
-        // Handle partner pairing for doubles tournaments
-        if let partnerID = participant.partnerID {
-            // Update existing partner's record to link them together
-            if let partnerIndex = updatedTournament.participants.firstIndex(where: { $0.userID == partnerID }) {
-                updatedTournament.participants[partnerIndex].partnerID = participant.userID
-                updatedTournament.participants[partnerIndex].partnerName = participant.displayName
-                updatedTournament.participants[partnerIndex].teamName = participant.teamName
-            }
-        }
-        
-        // Add participant
-        updatedTournament.participants.append(participant)
-        
-        // Update tournament status if needed
-        updateTournamentStatus(&updatedTournament)
-        
-        try await updateTournament(updatedTournament)
+        // Update local cache
+        cacheTournament(updatedTournament)
         
         // Update local tournaments list
         if let index = tournaments.firstIndex(where: { $0.id == tournament.id }) {
@@ -226,7 +213,7 @@ class TournamentService: ObservableObject {
         }
     }
     
-    /// Enhanced match completion with validation and progression
+    /// Enhanced match completion with validation and Firebase integration
     func completeMatch(
         tournamentId: String,
         match: TournamentMatch,
@@ -237,31 +224,49 @@ class TournamentService: ObservableObject {
         
         try validateMatchCompletion(match: match, winnerID: winnerID, loserID: loserID, score: score)
         
-        var tournament = try await getTournament(id: tournamentId)
+        // Create updated match with result
+        var updatedMatch = match
+        updatedMatch.winnerID = winnerID
+        updatedMatch.loserID = loserID
+        updatedMatch.finalScore = score
+        updatedMatch.status = "Completed"
         
-        // Update match result directly in tournament
-        if let matchIndex = tournament.matches.firstIndex(where: { $0.id == match.id }) {
-            tournament.matches[matchIndex].winnerID = winnerID
-            tournament.matches[matchIndex].loserID = loserID
-            tournament.matches[matchIndex].finalScore = score
-            tournament.matches[matchIndex].status = "Completed"
-        }
+        // Use Firebase service to update match with transaction safety
+        try await firebaseService.updateTournamentMatch(
+            tournamentId: tournamentId,
+            match: updatedMatch
+        )
         
-        // Update participant records
-        if let winnerIndex = tournament.participants.firstIndex(where: { $0.userID == winnerID }) {
-            tournament.participants[winnerIndex].wins += 1
-        }
-        if let loserIndex = tournament.participants.firstIndex(where: { $0.userID == loserID }) {
-            tournament.participants[loserIndex].losses += 1
+        // Refresh tournament data from Firebase to get updated state
+        let updatedTournament = try await firebaseService.getTournament(id: tournamentId)
+        
+        // Update local cache
+        cacheTournament(updatedTournament)
+        
+        // Update local tournaments list
+        if let index = tournaments.firstIndex(where: { $0.id.uuidString == tournamentId }) {
+            tournaments[index] = updatedTournament
         }
         
         // Check for tournament completion
-        if tournament.status == "Completed" {
-            await finalizeCompletedTournament(&tournament)
+        if updatedTournament.status == "Completed" {
+            await finalizeCompletedTournament(updatedTournament)
         }
         
-        try await updateTournament(tournament)
         print("✅ Match completed: \(match.displayName) - Winner: \(winnerID)")
+    }
+    
+    private func finalizeCompletedTournament(_ tournament: Tournament) async {
+        print("🏆 Tournament completed: \(tournament.name)")
+        
+        // Update final placements
+        let champion = tournament.participants.first { $0.placement == 1 }
+        if let champion = champion {
+            print("👑 Champion: \(champion.displayName)")
+        }
+        
+        // Clear from cache since it's now completed
+        tournamentCache.removeValue(forKey: tournament.id.uuidString)
     }
     
     // MARK: - Validation Methods
@@ -358,18 +363,7 @@ class TournamentService: ObservableObject {
         }
     }
     
-    private func finalizeCompletedTournament(_ tournament: inout Tournament) async {
-        print("🏆 Tournament completed: \(tournament.name)")
-        
-        // Update final placements
-        let champion = tournament.participants.first { $0.placement == 1 }
-        if let champion = champion {
-            print("👑 Champion: \(champion.displayName)")
-        }
-        
-        // Clear from cache since it's now completed
-        tournamentCache.removeValue(forKey: tournament.id.uuidString)
-    }
+
     
     // MARK: - Performance Monitoring
     
@@ -506,31 +500,21 @@ class TournamentService: ObservableObject {
         }
     }
     
-    /// Leave tournament (convenience method)
+    /// Leave tournament (Firebase integrated)
     func leaveTournament(_ tournament: Tournament, user: User) async throws {
-        var updatedTournament = tournament
         let userID = user.id.uuidString
         
-        // Find and remove participant
-        if let participantIndex = updatedTournament.participants.firstIndex(where: { $0.userID == userID }) {
-            let participant = updatedTournament.participants[participantIndex]
-            
-            // If they have a partner, unlink the partner
-            if let partnerID = participant.partnerID {
-                if let partnerIndex = updatedTournament.participants.firstIndex(where: { $0.userID == partnerID }) {
-                    updatedTournament.participants[partnerIndex].partnerID = nil
-                    updatedTournament.participants[partnerIndex].partnerName = nil
-                    updatedTournament.participants[partnerIndex].teamName = nil
-                }
-            }
-            
-            updatedTournament.participants.remove(at: participantIndex)
-        }
+        // Use Firebase service to remove participant with transaction safety
+        try await firebaseService.leaveTournament(
+            tournamentId: tournament.id.uuidString,
+            userId: userID
+        )
         
-        // Update tournament status if needed
-        updateTournamentStatus(&updatedTournament)
+        // Refresh tournament data from Firebase to get updated state
+        let updatedTournament = try await firebaseService.getTournament(id: tournament.id.uuidString)
         
-        try await updateTournament(updatedTournament)
+        // Update local cache
+        cacheTournament(updatedTournament)
         
         // Update local tournaments list
         if let index = tournaments.firstIndex(where: { $0.id == tournament.id }) {
@@ -605,6 +589,9 @@ enum UserTournamentStatus: Equatable {
     case eliminated(placement: Int)
     case finished(placement: Int)
     case active
+    case champion
+    case runnerUp
+    case thirdPlace
     
     var description: String {
         switch self {
@@ -615,6 +602,9 @@ enum UserTournamentStatus: Equatable {
         case .eliminated: return "Eliminated"
         case .finished: return "Finished"
         case .active: return "Active"
+        case .champion: return "Champion"
+        case .runnerUp: return "Runner-up"
+        case .thirdPlace: return "3rd Place"
         }
     }
 
@@ -625,63 +615,16 @@ enum UserTournamentStatus: Equatable {
         case .waitingForMatch: return .blue
         case .hasMatch: return .purple
         case .eliminated: return .red
-        case .finished: return .yellow
+        case .finished: return .gray
         case .active: return .green
+        case .champion: return .yellow
+        case .runnerUp: return .gray
+        case .thirdPlace: return .orange
         }
     }
 }
 
-// MARK: - Tournament Error Types
-
-enum TournamentError: LocalizedError, Equatable {
-    case invalidName
-    case invalidParticipantCount(Int)
-    case invalidStartDate
-    case registrationClosed
-    case tournamentFull
-    case alreadyRegistered
-    case invalidStatus(String)
-    case insufficientParticipants(Int)
-    case matchAlreadyCompleted
-    case invalidMatchResult
-    case creationFailed(String)
-    case fetchFailed(String)
-    case operationInProgress
-    case batchOperationPartialFailure(String)
-    
-    var errorDescription: String? {
-        switch self {
-        case .invalidName:
-            return "Tournament name is required"
-        case .invalidParticipantCount(let count):
-            return "Invalid participant count: \(count). Must be between 4 and 128."
-        case .invalidStartDate:
-            return "Tournament start date must be in the future"
-        case .registrationClosed:
-            return "Registration is closed for this tournament"
-        case .tournamentFull:
-            return "Tournament is full"
-        case .alreadyRegistered:
-            return "Already registered for this tournament"
-        case .invalidStatus(let status):
-            return "Invalid tournament status: \(status)"
-        case .insufficientParticipants(let count):
-            return "Insufficient participants: \(count). Minimum 4 required."
-        case .matchAlreadyCompleted:
-            return "Match has already been completed"
-        case .invalidMatchResult:
-            return "Invalid match result"
-        case .creationFailed(let reason):
-            return "Failed to create tournament: \(reason)"
-        case .fetchFailed(let reason):
-            return "Failed to fetch tournament: \(reason)"
-        case .operationInProgress:
-            return "Another operation is currently in progress"
-        case .batchOperationPartialFailure(let reason):
-            return "Batch operation partially failed: \(reason)"
-        }
-    }
-}
+// Note: TournamentError is defined in Tournament.swift to avoid duplication
 
 // MARK: - Array Extension for Chunking
 

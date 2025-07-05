@@ -78,6 +78,16 @@ struct SidebarHomeView: View {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateToTournaments)) { _ in
+                print("🏆 SidebarHomeView: Received navigateToTournaments notification - switching to tournaments")
+                withAnimation {
+                    selected = .tournaments
+                    // Close sidebar on phones after navigation
+                    if hSize == .compact {
+                        showSidebar = false
+                    }
+                }
+            }
         }
     }
 }
@@ -89,7 +99,7 @@ private func SelectedScreen(_ item: SidebarItem) -> some View {
     switch item {
     case .dashboard:    DashboardView()
     case .queue:        QueueView()
-    case .tournaments:  TournamentManagerView()
+    case .tournaments:  TournamentTabView()
     case .social:       SocialView()
     case .courts:       CourtView()
     case .chat:         ChatView()
