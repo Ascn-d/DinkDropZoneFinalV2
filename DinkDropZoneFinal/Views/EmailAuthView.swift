@@ -1,7 +1,11 @@
 import SwiftUI
+import SwiftData
 import FirebaseAuth
 
 struct EmailAuthView: View {
+    let authService: AuthService
+    let onAuthSuccess: (User) -> Void
+    
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
     
@@ -10,11 +14,10 @@ struct EmailAuthView: View {
     @State private var confirmPassword = ""
     @State private var fullName = ""
     @State private var isSignUp = false
-    @State private var isLoading = false
-    @State private var errorMessage: String?
     @State private var showPassword = false
     @State private var showConfirmPassword = false
     @State private var animateForm = false
+    @State private var errorMessage = ""
     
     var body: some View {
         NavigationView {
@@ -119,7 +122,7 @@ struct EmailAuthView: View {
                             }
                         } label: {
                             HStack(spacing: 12) {
-                                if isLoading {
+                                if authService.isLoading {
                                     DotsLoadingView()
                                         .scaleEffect(0.7)
                                 } else {
@@ -144,7 +147,7 @@ struct EmailAuthView: View {
                             .cornerRadius(25)
                             .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
                         }
-                        .disabled(isLoading || !isFormValid)
+                        .disabled(authService.isLoading || !isFormValid)
                         .opacity(isFormValid ? 1.0 : 0.6)
                         .scaleEffect(animateForm ? 1.0 : 0.9)
                         
@@ -157,6 +160,7 @@ struct EmailAuthView: View {
                                     confirmPassword = ""
                                     fullName = ""
                                 }
+                                errorMessage = ""
                             }
                         } label: {
                             HStack(spacing: 4) {
@@ -171,7 +175,7 @@ struct EmailAuthView: View {
                         .opacity(animateForm ? 1.0 : 0)
                         
                         // Error Message
-                        if let errorMessage {
+                        if !errorMessage.isEmpty {
                             Text(errorMessage)
                                 .font(.caption)
                                 .foregroundColor(.red)
@@ -219,31 +223,33 @@ struct EmailAuthView: View {
     }
     
     private func handleAuthentication() async {
-        isLoading = true
-        errorMessage = nil
-        let firebase = FirebaseService.shared
+        errorMessage = ""
 
         do {
             let user: User
             if isSignUp {
-                user = try await firebase.signUp(email: email, password: password, displayName: fullName)
+                user = try await authService.signUpWithEmail(email: email, password: password, displayName: fullName)
             } else {
-                user = try await firebase.signIn(email: email, password: password)
+                user = try await authService.signInWithEmail(email: email, password: password)
             }
-            appState.updateUser(user)
-            dismiss()
+            
+            await MainActor.run {
+                onAuthSuccess(user)
+                dismiss()
+            }
         } catch {
-            errorMessage = error.localizedDescription
-
-            // Surface the error as a notification banner too
-            appState.pushNotification(AppNotification(
-                type: .error,
-                title: "Authentication Failed",
-                message: error.localizedDescription,
-                data: [:]
-            ))
+            await MainActor.run {
+                errorMessage = error.localizedDescription
+                
+                // Surface the error as a notification banner too
+                appState.pushNotification(AppNotification(
+                    type: .error,
+                    title: "Authentication Failed",
+                    message: error.localizedDescription,
+                    data: [:]
+                ))
+            }
         }
-        isLoading = false
     }
 }
 
@@ -334,6 +340,6 @@ struct CustomSecureField: View {
 }
 
 #Preview {
-    EmailAuthView()
+    EmailAuthView(authService: AuthService(modelContext: ModelContext(try! ModelContainer(for: User.self)))) { _ in }
         .environmentObject(AppState())
 } 

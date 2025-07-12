@@ -24,225 +24,705 @@ struct TournamentMatchView: View {
     @State private var gameScores: [(String, String)] = []
     @State private var showGameScoreEntry = false
     
+    // Enhanced features
+    @State private var isSpectatorMode = false
+    @State private var showSpectatorView = false
+    @State private var spectatorCount = 0
+    @State private var showLiveStream = false
+    @State private var isStreamingEnabled = false
+    @State private var showMatchStats = false
+    @State private var showSocialSharing = false
+    @State private var liveCommentary: [CommentaryEvent] = []
+    @State private var showCommentaryPanel = false
+    @State private var matchHighlights: [MatchHighlight] = []
+    @State private var showInstantReplay = false
+    @State private var replayEvent: ReplayEvent?
+    
+    // Real-time updates
+    @State private var matchUpdateListener: FirebaseService.ListenerHandle?
+    @State private var spectatorListener: FirebaseService.ListenerHandle?
+    @State private var lastUpdateTime = Date()
+    
+    // Professional features
+    @State private var enableProfessionalOverlay = false
+    @State private var showAdvancedStats = false
+    @State private var performanceMetrics = PerformanceMetrics()
+    @State private var rallyTracking = RallyTracking()
+    @State private var showCourtMapping = false
+    
     var body: some View {
         NavigationView {
-            VStack(spacing: 24) {
-                // Enhanced Match Header
-                enhancedMatchHeader
+            ZStack {
+                // Main match content
+                mainMatchContent
                 
-                // Match Timer (if in progress)
-                if showMatchTimer {
-                    matchTimerView
+                // Professional overlay
+                if enableProfessionalOverlay {
+                    professionalOverlay
                 }
                 
-                // Players Section
-                enhancedPlayersSection
-                
-                // Live Score Tracking
-                if match.status == "In Progress" && !match.hasResult {
-                    liveScoreSection
+                // Spectator overlay
+                if isSpectatorMode {
+                    spectatorOverlay
                 }
                 
-                // Match Status
-                enhancedMatchStatus
+                // Live streaming overlay
+                if showLiveStream {
+                    liveStreamOverlay
+                }
                 
-                // Action Buttons
-                enhancedActionButtons
+                // Commentary panel
+                if showCommentaryPanel {
+                    commentaryPanel
+                }
                 
-                Spacer()
+                // Instant replay
+                if showInstantReplay, let replay = replayEvent {
+                    instantReplayView(replay)
+                }
             }
-            .padding()
             .navigationTitle("Tournament Match")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") {
-                        stopTimer()
-                        dismiss()
-                    }
-                }
-                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button("Match History", systemImage: "clock.arrow.circlepath") {
-                            showMatchHistory = true
+                        Button(action: { showSpectatorView.toggle() }) {
+                            Label("Spectator Mode", systemImage: "eye")
                         }
                         
-                        Button("Add Notes", systemImage: "note.text") {
-                            // Add notes functionality
+                        Button(action: { showLiveStream.toggle() }) {
+                            Label("Live Stream", systemImage: "video")
                         }
                         
-                        if match.status == "Ready" && canStartMatch {
-                            Button("Start Match", systemImage: "play.circle") {
-                                startMatch()
+                        Button(action: { showMatchStats.toggle() }) {
+                            Label("Match Stats", systemImage: "chart.bar")
+                        }
+                        
+                        Button(action: { showSocialSharing.toggle() }) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        
+                        Button(action: { showCommentaryPanel.toggle() }) {
+                            Label("Commentary", systemImage: "text.bubble")
+                        }
+                        
+                        if isUserInMatch {
+                            Button(action: { enableProfessionalOverlay.toggle() }) {
+                                Label("Pro Mode", systemImage: "star.circle")
                             }
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
+                            .font(.title2)
                     }
                 }
             }
-            .sheet(isPresented: $showScoreEntry) {
-                enhancedScoreEntryView
-            }
-            .sheet(isPresented: $showGameScoreEntry) {
-                gameScoreEntryView
+            .onAppear {
+                setupRealTimeUpdates()
+                checkSpectatorMode()
             }
             .onDisappear {
-                stopTimer()
+                cleanupRealTimeUpdates()
             }
+        }
+        .sheet(isPresented: $showSpectatorView) {
+            SpectatorMatchView(match: match, tournament: tournament)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showMatchStats) {
+            AdvancedMatchStatsView(match: match, performanceMetrics: performanceMetrics)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showSocialSharing) {
+            SocialSharingView(match: match, tournament: tournament, highlights: matchHighlights)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showScoreEntry) {
+            ScoreEntryView(match: match, tournament: tournament)
+                .environmentObject(appState)
         }
     }
     
-    // MARK: - Match Header
+    // MARK: - Main Match Content
     
-    private var matchHeader: some View {
-        VStack(spacing: 16) {
-            // Tournament Name
-            Text(tournament.name)
-                .font(.headline)
-                .foregroundColor(.secondary)
+    private var mainMatchContent: some View {
+        VStack(spacing: 24) {
+            // Enhanced Match Header
+            enhancedMatchHeader
             
-            // Match Identifier
-            VStack(spacing: 8) {
-                Text(match.displayName)
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Text(match.bracket == "Winners" ? "Winners Bracket" : "Losers Bracket")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            // Match Timer (if in progress)
+            if showMatchTimer {
+                matchTimerView
             }
             
-            // Status Badge
-            HStack {
-                Label(match.status, systemImage: "circle.fill")
-                    .foregroundColor(statusColor)
-                    .font(.subheadline)
+            // Real-time spectator count
+            if spectatorCount > 0 {
+                spectatorCountView
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(statusColor.opacity(0.1))
-            )
+            
+            // Players Section
+            enhancedPlayersSection
+            
+            // Live Score Tracking
+            if match.status == "In Progress" && !match.hasResult {
+                liveScoreSection
+            }
+            
+            // Match Status
+            enhancedMatchStatus
+            
+            // Action Buttons
+            enhancedActionButtons
+            
+            Spacer()
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
     }
     
-    private var statusColor: Color {
-        switch match.status {
-        case "Upcoming": return .gray
-        case "Ready": return .blue
-        case "In Progress": return .orange
-        case "Completed": return .green
-        case "Defaulted", "Cancelled": return .red
-        default: return .gray
-        }
-    }
+    // MARK: - Enhanced Match Header
     
-    // MARK: - Players Section
-    
-    private var playersSection: some View {
-        VStack(spacing: 20) {
-            // Player 1
-            playerCard(
-                name: match.player1Name,
-                seed: nil, // Simplified model doesn't have seeds
-                isCurrentUser: match.player1ID == appState.currentUser?.id.uuidString,
-                isWinner: match.winnerID == match.player1ID
-            )
-            
-            // VS Separator
+    private var enhancedMatchHeader: some View {
+        VStack(spacing: 12) {
             HStack {
-                Rectangle()
-                    .fill(.secondary.opacity(0.3))
-                    .frame(height: 1)
-                
-                Text("VS")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                
-                Rectangle()
-                    .fill(.secondary.opacity(0.3))
-                    .frame(height: 1)
-            }
-            
-            // Player 2
-            playerCard(
-                name: match.player2Name,
-                seed: nil, // Simplified model doesn't have seeds
-                isCurrentUser: match.player2ID == appState.currentUser?.id.uuidString,
-                isWinner: match.winnerID == match.player2ID
-            )
-        }
-    }
-    
-    private func playerCard(name: String, seed: Int?, isCurrentUser: Bool, isWinner: Bool) -> some View {
-        HStack(spacing: 16) {
-            // Seed Badge (optional since simplified model doesn't have seeds)
-            if let seed = seed {
-                Text("\(seed)")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .frame(width: 50, height: 50)
-                    .background(Circle().fill(.blue))
-            }
-            
-            // Player Info
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(name.isEmpty ? "TBD" : name)
-                        .font(.title3)
-                        .fontWeight(isWinner ? .bold : .medium)
+                VStack(alignment: .leading) {
+                    Text(tournament.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
                     
-                    if isCurrentUser {
-                        Text("(You)")
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule()
-                                    .fill(.blue.opacity(0.1))
-                            )
-                    }
+                    Text("Match \(match.matchNumber) - Round \(match.round)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
                 
+                Spacer()
+                
+                // Live indicator
+                if match.status == "In Progress" {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 8, height: 8)
+                            .scaleEffect(1.2)
+                            .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: true)
+                        
+                        Text("LIVE")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.red)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.red.opacity(0.1))
+                    .cornerRadius(12)
+                }
+            }
+            
+            // Match importance indicator
+            if match.bracket == "Finals" || match.round >= tournament.matches.map(\.round).max() ?? 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "crown.fill")
+                        .foregroundColor(.yellow)
+                    
+                    Text(match.bracket == "Finals" ? "Championship Match" : "Final Round")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.yellow.opacity(0.1))
+                .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(.quaternary.opacity(0.3))
+        .cornerRadius(16)
+    }
+    
+    // MARK: - Enhanced Players Section
+    
+    private var enhancedPlayersSection: some View {
+        VStack(spacing: 16) {
+            // Player cards with enhanced information
+            HStack(spacing: 16) {
+                enhancedPlayerCard(
+                    name: match.player1Name,
+                    id: match.player1ID,
+                    isWinner: match.winnerID == match.player1ID,
+                    position: .leading
+                )
+                
+                Text("VS")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                
+                enhancedPlayerCard(
+                    name: match.player2Name,
+                    id: match.player2ID,
+                    isWinner: match.winnerID == match.player2ID,
+                    position: .trailing
+                )
+            }
+            
+            // Live score display
+            if match.status == "In Progress" && !match.finalScore.isEmpty {
+                liveScoreDisplay
+            }
+        }
+    }
+    
+    private func enhancedPlayerCard(name: String, id: String, isWinner: Bool, position: HorizontalAlignment) -> some View {
+        VStack(alignment: position, spacing: 8) {
+            HStack {
                 if isWinner {
+                    Image(systemName: "crown.fill")
+                        .foregroundColor(.yellow)
+                        .font(.title2)
+                }
+                
+                Text(name.isEmpty ? "TBD" : name)
+                    .font(.headline)
+                    .fontWeight(isWinner ? .bold : .medium)
+                    .foregroundColor(isWinner ? .green : .primary)
+            }
+            
+            // Player stats if available
+            if let playerStats = getPlayerStats(id: id) {
+                VStack(alignment: position, spacing: 4) {
                     HStack {
-                        Image(systemName: "crown.fill")
-                            .foregroundColor(.yellow)
-                        Text("Winner")
+                        Text("Rating:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(playerStats.rating, specifier: "%.0f")")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    
+                    HStack {
+                        Text("W/L:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(playerStats.wins)-\(playerStats.losses)")
                             .font(.caption)
                             .fontWeight(.medium)
                     }
                 }
             }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(isWinner ? .green.opacity(0.1) : .gray.opacity(0.1))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isWinner ? .green : .gray.opacity(0.3), lineWidth: isWinner ? 2 : 1)
+        )
+    }
+    
+    // MARK: - Live Score Display
+    
+    private var liveScoreDisplay: some View {
+        VStack(spacing: 8) {
+            Text("Current Score")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            HStack(spacing: 20) {
+                Text(getPlayerScore(match.player1ID))
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Text("-")
+                    .font(.title)
+                    .foregroundColor(.secondary)
+                
+                Text(getPlayerScore(match.player2ID))
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+            }
+            .padding()
+            .background(.blue.opacity(0.1))
+            .cornerRadius(12)
+        }
+    }
+    
+    // MARK: - Professional Overlay
+    
+    private var professionalOverlay: some View {
+        VStack {
+            HStack {
+                // Score overlay
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LIVE")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.red)
+                    
+                    Text(match.finalScore.isEmpty ? "0-0" : match.finalScore)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.black.opacity(0.7))
+                        .cornerRadius(6)
+                }
+                
+                Spacer()
+                
+                // Match time
+                if showMatchTimer {
+                    Text(formatElapsedTime(elapsedTime))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.black.opacity(0.7))
+                        .cornerRadius(6)
+                }
+            }
+            
+            Spacer()
+            
+            // Performance metrics overlay
+            if showAdvancedStats {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Rally Count: \(rallyTracking.totalRallies)")
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                        
+                        Text("Avg Rally: \(rallyTracking.averageRallyLength, specifier: "%.1f")s")
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                    }
+                    .padding(8)
+                    .background(.black.opacity(0.7))
+                    .cornerRadius(6)
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding()
+        .allowsHitTesting(false)
+    }
+    
+    // MARK: - Spectator Overlay
+    
+    private var spectatorOverlay: some View {
+        VStack {
+            Spacer()
+            
+            HStack {
+                Spacer()
+                
+                VStack(spacing: 12) {
+                    // Spectator actions
+                    Button(action: { sendSpectatorReaction("👏") }) {
+                        Image(systemName: "hands.clap")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.blue)
+                            .clipShape(Circle())
+                    }
+                    
+                    Button(action: { sendSpectatorReaction("🔥") }) {
+                        Image(systemName: "flame")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.orange)
+                            .clipShape(Circle())
+                    }
+                    
+                    Button(action: { sendSpectatorReaction("⚡") }) {
+                        Image(systemName: "bolt")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.yellow)
+                            .clipShape(Circle())
+                    }
+                }
+                .padding(.trailing, 20)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    // MARK: - Supporting Views and Methods
+    
+    private var spectatorCountView: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "eye")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Text("\(spectatorCount) watching")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.gray.opacity(0.1))
+        .cornerRadius(12)
+    }
+    
+    private var liveStreamOverlay: some View {
+        VStack {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 8, height: 8)
+                        
+                        Text("STREAMING")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.red)
+                    }
+                    
+                    Text("Live on DinkDrop")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Button(action: { showLiveStream = false }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding()
+            .background(.black.opacity(0.8))
+            .cornerRadius(12)
             
             Spacer()
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isCurrentUser ? .blue.opacity(0.1) : 
-                      isWinner ? .green.opacity(0.1) : .gray.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            isCurrentUser ? .blue : 
-                            isWinner ? .green : .gray.opacity(0.3),
-                            lineWidth: isCurrentUser ? 2 : 1
-                        )
-                )
+    }
+    
+    private var commentaryPanel: some View {
+        VStack {
+            Spacer()
+            
+            VStack(spacing: 0) {
+                // Commentary header
+                HStack {
+                    Text("Live Commentary")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    
+                    Spacer()
+                    
+                    Button(action: { showCommentaryPanel = false }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding()
+                .background(.white)
+                
+                // Commentary content
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(liveCommentary) { commentary in
+                            CommentaryEventView(event: commentary)
+                        }
+                    }
+                    .padding()
+                }
+                .frame(maxHeight: 300)
+                .background(.white)
+            }
+            .cornerRadius(16)
+            .shadow(radius: 10)
+            .padding()
+        }
+    }
+    
+    private func instantReplayView(_ replay: ReplayEvent) -> some View {
+        VStack {
+            Spacer()
+            
+            VStack(spacing: 16) {
+                HStack {
+                    Text("Instant Replay")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    
+                    Spacer()
+                    
+                    Button(action: { showInstantReplay = false }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                Text(replay.description)
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                
+                // Replay content would go here
+                Rectangle()
+                    .fill(.gray.opacity(0.3))
+                    .frame(height: 200)
+                    .cornerRadius(12)
+                    .overlay(
+                        VStack {
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.white)
+                            
+                            Text("Replay: \(replay.title)")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        }
+                    )
+            }
+            .padding()
+            .background(.white)
+            .cornerRadius(16)
+            .shadow(radius: 10)
+            .padding()
+            
+            Spacer()
+        }
+        .background(.black.opacity(0.5))
+        .onTapGesture {
+            showInstantReplay = false
+        }
+    }
+    
+    // MARK: - Real-time Updates
+    
+    private func setupRealTimeUpdates() {
+        // Listen for match updates
+        matchUpdateListener = appState.firebaseService.observeMatch(id: match.id.uuidString) { result in
+            switch result {
+            case .success(let updatedMatch):
+                // Update match state
+                handleMatchUpdate(updatedMatch)
+            case .failure(let error):
+                print("❌ Match update error: \(error)")
+            }
+        }
+        
+        // Listen for spectator updates
+        spectatorListener = appState.firebaseService.observeSpectators(matchId: match.id.uuidString) { spectators in
+            spectatorCount = spectators.count
+        }
+        
+        // Setup commentary updates
+        setupCommentaryUpdates()
+    }
+    
+    private func cleanupRealTimeUpdates() {
+        matchUpdateListener?.remove()
+        spectatorListener?.remove()
+        timer?.invalidate()
+    }
+    
+    private func checkSpectatorMode() {
+        guard let currentUser = appState.currentUser else { return }
+        isSpectatorMode = match.player1ID != currentUser.id.uuidString && 
+                          match.player2ID != currentUser.id.uuidString
+    }
+    
+    private func handleMatchUpdate(_ updatedMatch: TournamentMatch) {
+        // Update UI with new match data
+        // This would typically update the match object
+        lastUpdateTime = Date()
+        
+        // Add to commentary
+        if updatedMatch.status != match.status {
+            let commentary = CommentaryEvent(
+                id: UUID().uuidString,
+                timestamp: Date(),
+                type: .statusChange,
+                message: "Match status changed to \(updatedMatch.status)",
+                isSystemGenerated: true,
+                userId: nil
+            )
+            liveCommentary.append(commentary)
+        }
+        
+        // Generate highlights for significant events
+        if updatedMatch.finalScore != match.finalScore {
+            generateHighlight(for: updatedMatch)
+        }
+    }
+    
+    private func setupCommentaryUpdates() {
+        // Auto-generate commentary based on match events
+        if match.status == "In Progress" {
+            generateAutomaticCommentary()
+        }
+    }
+    
+    private func generateAutomaticCommentary() {
+        let commentary = CommentaryEvent(
+            id: UUID().uuidString,
+            timestamp: Date(),
+            type: .matchStart,
+            message: "Match is underway! \(match.player1Name) vs \(match.player2Name)",
+            isSystemGenerated: true,
+            userId: nil
         )
+        liveCommentary.append(commentary)
+    }
+    
+    private func generateHighlight(for match: TournamentMatch) {
+        let highlight = MatchHighlight(
+            id: UUID().uuidString,
+            timestamp: Date(),
+            type: .scoreUpdate,
+            title: "Score Update",
+            description: "New score: \(match.finalScore)",
+            matchId: match.id.uuidString,
+            playerId: match.winnerID
+        )
+        matchHighlights.append(highlight)
+    }
+    
+    private func sendSpectatorReaction(_ emoji: String) {
+        // Send reaction to Firebase
+        Task {
+            try await appState.firebaseService.sendSpectatorReaction(
+                matchId: match.id.uuidString,
+                userId: appState.currentUser?.id.uuidString ?? "",
+                reaction: emoji
+            )
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func getPlayerStats(id: String) -> PlayerStats? {
+        // Get player statistics from AppState or Firebase
+        return appState.getPlayerStats(id: id)
+    }
+    
+    private func getPlayerScore(_ playerId: String) -> String {
+        // Extract individual player score from final score
+        let scores = match.finalScore.components(separatedBy: "-")
+        if match.player1ID == playerId {
+            return scores.first?.trimmingCharacters(in: .whitespaces) ?? "0"
+        } else {
+            return scores.last?.trimmingCharacters(in: .whitespaces) ?? "0"
+        }
     }
     
     // MARK: - Match Status
@@ -431,7 +911,8 @@ struct TournamentMatchView: View {
         
         Task {
             do {
-                try await service.submitMatchResult(
+                // Use AppState's centralized match result submission
+                try await appState.submitMatchResult(
                     match: match,
                     winnerID: winnerID,
                     loserID: loserID,
@@ -463,85 +944,6 @@ struct TournamentMatchView: View {
         player2Score = ""
         selectedWinner = nil
         errorMessage = nil
-    }
-    
-    // MARK: - Enhanced Match Header
-    
-    private var enhancedMatchHeader: some View {
-        VStack(spacing: 16) {
-            // Tournament Name
-            Text(tournament.name)
-                .font(.headline)
-                .foregroundColor(.secondary)
-            
-            // Match Identifier
-            VStack(spacing: 8) {
-                Text(match.displayName)
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Text(match.bracket == "Winners" ? "Winners Bracket" : "Losers Bracket")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            
-            // Status Badge
-            HStack {
-                Label(match.status, systemImage: "circle.fill")
-                    .foregroundColor(statusColor)
-                    .font(.subheadline)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(statusColor.opacity(0.1))
-            )
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
-    }
-    
-    // MARK: - Enhanced Players Section
-    
-    private var enhancedPlayersSection: some View {
-        VStack(spacing: 20) {
-            // Player 1
-            playerCard(
-                name: match.player1Name,
-                seed: nil, // Simplified model doesn't have seeds
-                isCurrentUser: match.player1ID == appState.currentUser?.id.uuidString,
-                isWinner: match.winnerID == match.player1ID
-            )
-            
-            // VS Separator
-            HStack {
-                Rectangle()
-                    .fill(.secondary.opacity(0.3))
-                    .frame(height: 1)
-                
-                Text("VS")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                
-                Rectangle()
-                    .fill(.secondary.opacity(0.3))
-                    .frame(height: 1)
-            }
-            
-            // Player 2
-            playerCard(
-                name: match.player2Name,
-                seed: nil, // Simplified model doesn't have seeds
-                isCurrentUser: match.player2ID == appState.currentUser?.id.uuidString,
-                isWinner: match.winnerID == match.player2ID
-            )
-        }
     }
     
     // MARK: - Enhanced Match Status

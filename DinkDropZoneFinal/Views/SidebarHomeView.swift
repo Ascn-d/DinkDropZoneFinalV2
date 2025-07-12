@@ -7,6 +7,7 @@ struct SidebarHomeView: View {
     @State private var selected: SidebarItem = .dashboard
     @State private var showSidebar = false
     @Environment(\.horizontalSizeClass) private var hSize
+    @EnvironmentObject private var analyticsService: AnalyticsService
     
     private var sidebarWidth: CGFloat { hSize == .regular ? 300 : 280 }
     
@@ -30,7 +31,7 @@ struct SidebarHomeView: View {
                     if hSize == .regular { Divider() }
                     
                     // ---------------- Main pane ----------------
-                    SelectedScreen(selected)
+                    selectedScreen
                         .id(selected)                      // ← key fix
                         .frame(maxWidth: .infinity,
                                maxHeight: .infinity)
@@ -90,25 +91,25 @@ struct SidebarHomeView: View {
             }
         }
     }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Simple router
-@ViewBuilder
-private func SelectedScreen(_ item: SidebarItem) -> some View {
-    switch item {
-    case .dashboard:    DashboardView()
-    case .queue:        QueueView()
-    case .tournaments:  TournamentTabView()
-    case .social:       SocialView()
-    case .courts:       CourtView()
-    case .chat:         ChatView()
-    case .leagues:      LeaguesHomeView()
-    case .leaderboard:  LeaderboardView()
-    case .achievements: AchievementsView()
-    case .missions:     MissionsView()
-    case .analytics:    XPAnalyticsView()
-    case .profile:      ProfileView()
+    
+    // ─────────────────────────────────────────────────────────────
+    // Simple router - moved inside struct to access environment objects
+    @ViewBuilder
+    private var selectedScreen: some View {
+        switch selected {
+        case .dashboard:    DashboardView()
+        case .queue:        QueueView()
+        case .tournaments:  TournamentTabView()
+        case .social:       SocialView()
+        case .courts:       CourtView()
+        case .chat:         ChatView()
+        case .leagues:      LeaguesHomeView()
+        case .leaderboard:  LeaderboardView()
+        case .achievements: AchievementsView()
+        case .missions:     MissionsView()
+        case .analytics:    XPAnalyticsView(analyticsService: analyticsService)
+        case .profile:      ProfileView()
+        }
     }
 }
 

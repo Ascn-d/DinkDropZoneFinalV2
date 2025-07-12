@@ -144,7 +144,7 @@ struct AnimatedGradientBackground: View {
 }
 
 struct FloatingParticlesView: View {
-    @State private var particles: [Particle] = []
+    @State private var particles: [SplashParticle] = []
     
     var body: some View {
         ZStack {
@@ -164,7 +164,7 @@ struct FloatingParticlesView: View {
     
     private func generateParticles() {
         particles = (0..<20).map { _ in
-            Particle(
+            SplashParticle(
                 position: CGPoint(
                     x: CGFloat.random(in: 0...UIScreen.main.bounds.width),
                     y: CGFloat.random(in: 0...UIScreen.main.bounds.height)
@@ -192,7 +192,7 @@ struct FloatingParticlesView: View {
     }
 }
 
-struct Particle: Identifiable {
+struct SplashParticle: Identifiable {
     let id = UUID()
     var position: CGPoint
     let size: CGFloat

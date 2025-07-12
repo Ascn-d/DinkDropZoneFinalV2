@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "dinkdropzone-app"
+    "default": "dinkdropzone"
   },
   "firestore": {
     "rules": "firestore.rules",

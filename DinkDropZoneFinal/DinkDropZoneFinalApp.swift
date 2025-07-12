@@ -15,6 +15,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         FirebaseApp.configure()
+        LoggingService.shared.log("Firebase configured successfully", level: .info)
 #if DEBUG
         // Log unsatisfiable Auto-Layout constraints directly in the console for faster debugging
         UserDefaults.standard.set(true, forKey: "_UIConstraintBasedLayoutLogUnsatisfiable")
@@ -27,6 +28,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 struct DinkDropZoneFinalApp: App {
     // register app delegate for Firebase setup
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    
+    @State private var isFirebaseReady = false
     
     private let container: ModelContainer = {
         let schema = Schema([
@@ -92,52 +95,104 @@ struct DinkDropZoneFinalApp: App {
         }
     }()
 
-    @State private var appState = AppState()
+    // Initialize services AFTER Firebase is ready
+    @State private var appState: AppState?
     @State private var xpManager: XPManager?
-    @State private var xpNotificationManager = XPNotificationManager()
-    @State private var nearbyService = NearbyMatchService()
-    @State private var locationService = UserLocationService()
+    @State private var xpNotificationManager: XPNotificationManager?
+    @State private var nearbyService: NearbyMatchService?
+    @State private var locationService: UserLocationService?
     @State private var nearbyPlayersService: NearbyPlayersService?
+    @State private var analyticsService: AnalyticsService?
     
     var body: some Scene {
         WindowGroup {
             ZStack {
-                ContentView()
-                    .modelContainer(container)
-                    .environmentObject(appState)
-                    .environment(xpManager ?? XPManager(modelContext: container.mainContext))
-                    .environment(xpNotificationManager)
-                    .environment(nearbyService)
-                    .environment(locationService)
-                    .environment(nearbyPlayersService ?? NearbyPlayersService(locationService: locationService))
-                
-                // XP Notification overlay
-                XPNotificationContainer()
-                    .environment(xpNotificationManager)
+                if isFirebaseReady,
+                   let appState = appState,
+                   let xpManager = xpManager,
+                   let xpNotificationManager = xpNotificationManager,
+                   let nearbyService = nearbyService,
+                   let locationService = locationService,
+                   let nearbyPlayersService = nearbyPlayersService,
+                   let analyticsService = analyticsService {
+                    
+                    ContentView()
+                        .modelContainer(container)
+                        .environmentObject(appState)
+                        .environmentObject(analyticsService)
+                        .environment(xpManager)
+                        .environment(xpNotificationManager)
+                        .environment(nearbyService)
+                        .environment(locationService)
+                        .environment(nearbyPlayersService)
+                    
+                    // XP Notification overlay
+                    XPNotificationContainer()
+                        .environment(xpNotificationManager)
 
-                // General app notifications (errors, etc.)
-                NotificationBannerContainer()
-                    .environmentObject(appState)
-            }
-                .onAppear {
-                    LoggingService.shared.log("App launched", level: .info)
-                    appState.initialize(with: container.mainContext)
-                    setupXPManager()
-                    nearbyPlayersService = NearbyPlayersService(locationService: locationService)
-                    SeedDataService.seedIfNeeded(modelContext: container.mainContext)
-                    CourtDataSeeder.seedIfNeeded(modelContext: container.mainContext)
+                    // General app notifications (errors, etc.)
+                    NotificationBannerContainer()
+                        .environmentObject(appState)
+                } else {
+                    // Loading screen while Firebase initializes
+                    VStack {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Initializing DinkDropZone...")
+                            .font(.headline)
+                            .padding(.top)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.ignoresSafeArea())
                 }
+            }
+            .onAppear {
+                initializeApp()
+            }
         }
     }
     
-    private func setupXPManager() {
-        if xpManager == nil {
-            xpManager = XPManager(modelContext: container.mainContext)
+    private func initializeApp() {
+        Task {
+            // Give Firebase a moment to fully initialize
+            try? await Task.sleep(for: .milliseconds(1000))
             
-            // Track daily login
-            xpManager?.trackDailyLogin()
-            
-            LoggingService.shared.log("XPManager initialized", level: .info)
+            await MainActor.run {
+                LoggingService.shared.log("Firebase ready, initializing services", level: .info)
+                
+                // Initialize services only after Firebase is ready
+                let newAppState = AppState()
+                let newLocationService = UserLocationService()
+                let newNearbyService = NearbyMatchService()
+                let newXPNotificationManager = XPNotificationManager()
+                let newXPManager = XPManager(modelContext: container.mainContext)
+                let newNearbyPlayersService = NearbyPlayersService(locationService: newLocationService)
+                let newAnalyticsService = AnalyticsService()
+                
+                // Initialize AppState with Firebase ready
+                newAppState.initialize(with: container.mainContext)
+                
+                // Setup XPManager
+                newXPManager.trackDailyLogin()
+                
+                // Seed data
+                SeedDataService.seedIfNeeded(modelContext: container.mainContext)
+                CourtDataSeeder.seedIfNeeded(modelContext: container.mainContext)
+                
+                // Set all services
+                self.appState = newAppState
+                self.locationService = newLocationService
+                self.nearbyService = newNearbyService
+                self.xpNotificationManager = newXPNotificationManager
+                self.xpManager = newXPManager
+                self.nearbyPlayersService = newNearbyPlayersService
+                self.analyticsService = newAnalyticsService
+                
+                // Finally mark as ready
+                self.isFirebaseReady = true
+                
+                LoggingService.shared.log("App initialization complete", level: .info)
+            }
         }
     }
 }

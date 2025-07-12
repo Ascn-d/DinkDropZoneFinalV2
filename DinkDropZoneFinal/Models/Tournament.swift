@@ -21,6 +21,21 @@ struct Tournament: Identifiable, Codable, Equatable {
     var venueAddress: String
     var participants: [TournamentParticipant]
     var matches: [TournamentMatch]
+    var isFeatured: Bool
+    var prizePool: Double
+    var entryFee: Double
+    
+    // Tournament Settings
+    var isPublic: Bool
+    var requiresApproval: Bool
+    var allowSpectators: Bool
+    var enableLiveStreaming: Bool
+    var allowPartnerRequests: Bool
+    var autoStartWhenFull: Bool
+    var enableRealTimeUpdates: Bool
+    var showPlayerRankings: Bool
+    var allowPlayerWithdrawal: Bool
+    var enablePushNotifications: Bool
     
     init(
         name: String,
@@ -33,7 +48,20 @@ struct Tournament: Identifiable, Codable, Equatable {
         organizerID: String,
         organizerName: String,
         venueName: String = "",
-        venueAddress: String = ""
+        venueAddress: String = "",
+        isFeatured: Bool = false,
+        prizePool: Double = 0.0,
+        entryFee: Double = 0.0,
+        isPublic: Bool = true,
+        requiresApproval: Bool = false,
+        allowSpectators: Bool = true,
+        enableLiveStreaming: Bool = false,
+        allowPartnerRequests: Bool = true,
+        autoStartWhenFull: Bool = false,
+        enableRealTimeUpdates: Bool = true,
+        showPlayerRankings: Bool = true,
+        allowPlayerWithdrawal: Bool = true,
+        enablePushNotifications: Bool = true
     ) {
         self.id = UUID()
         self.name = name
@@ -62,6 +90,19 @@ struct Tournament: Identifiable, Codable, Equatable {
         self.venueAddress = venueAddress
         self.participants = []
         self.matches = []
+        self.isFeatured = isFeatured
+        self.prizePool = prizePool
+        self.entryFee = entryFee
+        self.isPublic = isPublic
+        self.requiresApproval = requiresApproval
+        self.allowSpectators = allowSpectators
+        self.enableLiveStreaming = enableLiveStreaming
+        self.allowPartnerRequests = allowPartnerRequests
+        self.autoStartWhenFull = autoStartWhenFull
+        self.enableRealTimeUpdates = enableRealTimeUpdates
+        self.showPlayerRankings = showPlayerRankings
+        self.allowPlayerWithdrawal = allowPlayerWithdrawal
+        self.enablePushNotifications = enablePushNotifications
     }
     
     // Full initializer for Firebase decoding
@@ -81,7 +122,20 @@ struct Tournament: Identifiable, Codable, Equatable {
         venueName: String,
         venueAddress: String,
         participants: [TournamentParticipant],
-        matches: [TournamentMatch]
+        matches: [TournamentMatch],
+        isFeatured: Bool = false,
+        prizePool: Double = 0.0,
+        entryFee: Double = 0.0,
+        isPublic: Bool = true,
+        requiresApproval: Bool = false,
+        allowSpectators: Bool = true,
+        enableLiveStreaming: Bool = false,
+        allowPartnerRequests: Bool = true,
+        autoStartWhenFull: Bool = false,
+        enableRealTimeUpdates: Bool = true,
+        showPlayerRankings: Bool = true,
+        allowPlayerWithdrawal: Bool = true,
+        enablePushNotifications: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -99,6 +153,19 @@ struct Tournament: Identifiable, Codable, Equatable {
         self.venueAddress = venueAddress
         self.participants = participants
         self.matches = matches
+        self.isFeatured = isFeatured
+        self.prizePool = prizePool
+        self.entryFee = entryFee
+        self.isPublic = isPublic
+        self.requiresApproval = requiresApproval
+        self.allowSpectators = allowSpectators
+        self.enableLiveStreaming = enableLiveStreaming
+        self.allowPartnerRequests = allowPartnerRequests
+        self.autoStartWhenFull = autoStartWhenFull
+        self.enableRealTimeUpdates = enableRealTimeUpdates
+        self.showPlayerRankings = showPlayerRankings
+        self.allowPlayerWithdrawal = allowPlayerWithdrawal
+        self.enablePushNotifications = enablePushNotifications
     }
     
     var registeredCount: Int {
@@ -127,6 +194,7 @@ struct TournamentParticipant: Identifiable, Codable, Equatable {
     var partnerID: String?
     var partnerName: String?
     var teamName: String?
+    var registrationDate: Date?
     
     init(
         userID: String,
@@ -148,6 +216,7 @@ struct TournamentParticipant: Identifiable, Codable, Equatable {
         self.partnerID = partnerID
         self.partnerName = partnerName
         self.teamName = teamName
+        self.registrationDate = Date()
     }
     
     // Full initializer for Firebase decoding
@@ -163,7 +232,8 @@ struct TournamentParticipant: Identifiable, Codable, Equatable {
         losses: Int,
         partnerID: String?,
         partnerName: String?,
-        teamName: String?
+        teamName: String?,
+        registrationDate: Date? = nil
     ) {
         self.id = id
         self.userID = userID
@@ -177,6 +247,7 @@ struct TournamentParticipant: Identifiable, Codable, Equatable {
         self.partnerID = partnerID
         self.partnerName = partnerName
         self.teamName = teamName
+        self.registrationDate = registrationDate
     }
     
     var effectiveName: String {
@@ -639,6 +710,63 @@ extension Tournament {
         }
         
         return (true, nil)
+    }
+}
+
+// MARK: - Sample Data
+
+extension Tournament {
+    static var sampleTournament: Tournament {
+        var tournament = Tournament(
+            name: "Summer Championship 2024",
+            description: "Annual summer tournament featuring the best players in the region",
+            type: "Double Elimination",
+            format: "Doubles",
+            skillLevel: "Intermediate",
+            maxParticipants: 32,
+            startDate: Calendar.current.date(byAdding: .day, value: 2, to: Date()) ?? Date(),
+            organizerID: "sample-organizer-id",
+            organizerName: "Tournament Director",
+            venueName: "Central Sports Complex",
+            venueAddress: "123 Sports Ave, City, State",
+            isFeatured: true,
+            prizePool: 1500.0,
+            entryFee: 25.0
+        )
+        
+        // Add sample participants
+        tournament.participants = [
+            TournamentParticipant(userID: "user1", displayName: "John Smith", elo: 1450),
+            TournamentParticipant(userID: "user2", displayName: "Jane Doe", elo: 1380),
+            TournamentParticipant(userID: "user3", displayName: "Mike Johnson", elo: 1520),
+            TournamentParticipant(userID: "user4", displayName: "Sarah Wilson", elo: 1410),
+            TournamentParticipant(userID: "user5", displayName: "Chris Brown", elo: 1490),
+            TournamentParticipant(userID: "user6", displayName: "Lisa Davis", elo: 1360)
+        ]
+        
+        // Add sample matches
+        tournament.matches = [
+            TournamentMatch(
+                round: 1,
+                bracket: "Winners",
+                matchNumber: 1,
+                player1ID: "user1",
+                player1Name: "John Smith",
+                player2ID: "user2",
+                player2Name: "Jane Doe"
+            ),
+            TournamentMatch(
+                round: 1,
+                bracket: "Winners",
+                matchNumber: 2,
+                player1ID: "user3",
+                player1Name: "Mike Johnson",
+                player2ID: "user4",
+                player2Name: "Sarah Wilson"
+            )
+        ]
+        
+        return tournament
     }
 }
 

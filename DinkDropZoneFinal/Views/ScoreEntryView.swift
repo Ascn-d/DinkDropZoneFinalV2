@@ -607,7 +607,8 @@ struct ScoreEntryView: View {
                 let finalScore = "\(getPlayer1GamesWon())-\(getPlayer2GamesWon())"
                 let loser = winner == match.player1ID ? match.player2ID : match.player1ID
                 
-                try await tournamentService.submitMatchResult(
+                // Use AppState's centralized match result submission
+                try await appState.submitMatchResult(
                     match: match,
                     winnerID: winner,
                     loserID: loser,

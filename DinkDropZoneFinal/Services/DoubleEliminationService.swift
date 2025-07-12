@@ -3,7 +3,7 @@ import SwiftData
 
 // MARK: - Bracket Engine (All Tournament Formats) - Enhanced for Large Tournaments
 
-class BracketEngine: ObservableObject {
+class BracketEngine: ObservableObject, BracketEngineProtocol {
     
     // MARK: - Performance Configuration
     

@@ -8,18 +8,24 @@ import os.log
 final class LocalMatchmakingService: NSObject, ObservableObject {
     
     // MARK: - Observable Properties
-    @Published var isInQueue: Bool = false
     @Published var nearbyPlayers: [NearbyPlayer] = []
     @Published var currentMatch: LocalMatch?
     @Published var connectionStatus: ConnectionStatus = .disconnected
+    
+    // Queue state properties (synced with AppState)
+    @Published var isInQueue: Bool = false
     @Published var queuePosition: Int = 0
     @Published var estimatedWaitTime: TimeInterval = 0
     
+    // Reference to AppState for queue state management
+    private weak var appState: AppState?
+    
     // MARK: - MultipeerConnectivity Properties
-    private let serviceType = "dinkdropzone"
+    // Fix: Use a shorter, valid Bonjour service type (max 15 chars, no special chars)
+    private let serviceType = "dinkdrop-game"
     private let peerID: MCPeerID
     private let session: MCSession
-    private let advertiser: MCNearbyServiceAdvertiser
+    private var advertiser: MCNearbyServiceAdvertiser?
     private let browser: MCNearbyServiceBrowser
     
     private let logger = Logger(subsystem: "DinkDropZone", category: "LocalMatchmaking")
@@ -27,6 +33,7 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
     // MARK: - User Info
     private var currentUser: User?
     private var matchType: MatchType = .singles
+    private var isServiceActive = false
     
     enum ConnectionStatus {
         case connected
@@ -72,7 +79,7 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
     }
     
     // MARK: - Initialization
-    override init() {
+    init(appState: AppState? = nil) {
         // Create unique peer ID with UUID to ensure uniqueness across app instances
         let deviceName = UIDevice.current.name
         let uniqueID = UUID().uuidString.prefix(8)
@@ -82,24 +89,45 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
         // Initialize session
         self.session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .none)
         
-        // Initialize advertiser and browser
-        self.advertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: nil, serviceType: serviceType)
+        // Initialize browser (advertiser will be created when needed)
         self.browser = MCNearbyServiceBrowser(peer: peerID, serviceType: serviceType)
+        
+        self.appState = appState
         
         super.init()
         
         // Set delegates
         session.delegate = self
-        advertiser.delegate = self
         browser.delegate = self
         
-        logger.info("LocalMatchmakingService initialized with unique peer: \(self.peerID.displayName)")
+        logger.info("LocalMatchmakingService initialized with peer: \(self.peerID.displayName)")
+        logger.info("Using service type: \(self.serviceType)")
     }
     
     deinit {
-        advertiser.stopAdvertisingPeer()
+        stopService()
+    }
+    
+    // MARK: - Private Methods
+    
+    private func stopService() {
+        guard isServiceActive else { return }
+        
+        logger.info("Stopping MultipeerConnectivity services")
+        
+        advertiser?.stopAdvertisingPeer()
         browser.stopBrowsingForPeers()
         session.disconnect()
+        
+        advertiser = nil
+        isServiceActive = false
+    }
+    
+    private func checkNetworkReadiness() {
+        logger.info("📡 Network readiness check:")
+        logger.info("  - Service type: \(self.serviceType)")
+        logger.info("  - Peer ID: \(self.peerID.displayName)")
+        logger.info("  - Session state: \(self.session.connectedPeers.count) connected peers")
     }
     
     // MARK: - Public Methods
@@ -107,8 +135,12 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
     /// Start looking for matches locally
     @MainActor
     func startMatchmaking(user: User, matchType: MatchType) async throws {
+        guard let appState = appState else {
+            throw MatchmakingError.noAppState
+        }
+        
         // Check if this specific user is already in queue
-        guard self.currentUser?.id != user.id || !isInQueue else {
+        guard self.currentUser?.id != user.id || !appState.isInQueue else {
             logger.warning("User \(user.displayName) is already in queue")
             throw MatchmakingError.alreadyInQueue
         }
@@ -116,51 +148,55 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
         self.currentUser = user
         self.matchType = matchType
         
-        logger.info("Starting local matchmaking for \(user.displayName) with peer \(self.peerID.displayName)")
-        logger.info("Service type: \(self.serviceType)")
-        logger.info("Session configuration: encryption=\(self.session.encryptionPreference.rawValue)")
+        logger.info("Starting local matchmaking for \(user.displayName)")
         
-        // Log network readiness
+        // Stop any existing services first
+        stopService()
+        
+        // Check network readiness
         checkNetworkReadiness()
         
         connectionStatus = .connecting
         
-        // Create discovery info with user data and unique peer info
+        // Create discovery info with user data (keep it small to avoid issues)
         let discoveryInfo = [
-            "userId": user.id.uuidString,
-            "displayName": user.displayName,
+            "name": user.displayName.prefix(20).description, // Limit length
             "elo": String(user.elo),
-            "matchType": matchType.rawValue,
-            "peerID": self.peerID.displayName
+            "type": matchType.rawValue
         ]
         
         logger.info("Discovery info: \(discoveryInfo)")
         
-        // Stop any existing services
-        self.advertiser.stopAdvertisingPeer()
-        self.browser.stopBrowsingForPeers()
-        
         // Create new advertiser with user info
-        let newAdvertiser = MCNearbyServiceAdvertiser(
+        self.advertiser = MCNearbyServiceAdvertiser(
             peer: self.peerID,
             discoveryInfo: discoveryInfo,
             serviceType: self.serviceType
         )
-        newAdvertiser.delegate = self
         
-        // Start advertising and browsing
-        logger.info("🚀 Attempting to start advertising...")
-        newAdvertiser.startAdvertisingPeer()
-        logger.info("🚀 Attempting to start browsing...")
+        guard let advertiser = self.advertiser else {
+            throw MatchmakingError.serviceInitializationFailed
+        }
+        
+        advertiser.delegate = self
+        
+        // Start services with error handling
+        logger.info("🚀 Starting advertising...")
+        advertiser.startAdvertisingPeer()
+        
+        logger.info("🚀 Starting browsing...")
         self.browser.startBrowsingForPeers()
         
-        isInQueue = true
+        isServiceActive = true
+        
+        // Update both AppState and local properties
+        appState.isInQueue = true
+        self.isInQueue = true
+        
         connectionStatus = .connected
         
         // Start updating queue position simulation
         startQueueSimulation()
-        
-
         
         logger.info("Local matchmaking started successfully")
     }
@@ -168,17 +204,23 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
     /// Stop matchmaking
     @MainActor
     func stopMatchmaking() {
+        guard let appState = appState else { return }
+        
         logger.info("Stopping local matchmaking")
         
-        self.advertiser.stopAdvertisingPeer()
-        self.browser.stopBrowsingForPeers()
-        self.session.disconnect()
+        stopService()
         
-        isInQueue = false
+        // Update both AppState and local properties
+        appState.isInQueue = false
+        appState.queuePosition = 0
+        appState.estimatedWaitTime = 0
+        
+        self.isInQueue = false
+        self.queuePosition = 0
+        self.estimatedWaitTime = 0
+        
         connectionStatus = .disconnected
         nearbyPlayers.removeAll()
-        queuePosition = 0
-        estimatedWaitTime = 0
         
         logger.info("Local matchmaking stopped")
     }
@@ -273,19 +315,40 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
     
     private func startQueueSimulation() {
         // Simulate queue position updates
-        queuePosition = Int.random(in: 1...5)
-        estimatedWaitTime = TimeInterval(Int.random(in: 30...120))
+        guard let appState = appState else { return }
+        
+        Task { @MainActor in
+            let position = Int.random(in: 1...5)
+            let waitTime = TimeInterval(Int.random(in: 30...120))
+            
+            appState.queuePosition = position
+            appState.estimatedWaitTime = waitTime
+            
+            self.queuePosition = position
+            self.estimatedWaitTime = waitTime
+        }
         
         // Update position every 10 seconds
         Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] timer in
-            guard let self = self, self.isInQueue else {
+            guard let self = self, let appState = self.appState else {
                 timer.invalidate()
                 return
             }
             
             Task { @MainActor in
-                self.queuePosition = max(1, self.queuePosition - 1)
-                self.estimatedWaitTime = max(15, self.estimatedWaitTime - 10)
+                guard appState.isInQueue else {
+                    timer.invalidate()
+                    return
+                }
+                
+                let newPosition = max(1, appState.queuePosition - 1)
+                let newWaitTime = max(15, appState.estimatedWaitTime - 10)
+                
+                appState.queuePosition = newPosition
+                appState.estimatedWaitTime = newWaitTime
+                
+                self.queuePosition = newPosition
+                self.estimatedWaitTime = newWaitTime
             }
         }
     }
@@ -374,8 +437,8 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
               let displayName = info["displayName"],
               let eloString = info["elo"],
               let elo = Int(eloString),
-              let matchType = info["matchType"],
-              let userId = info["userId"] else {
+              let matchType = info["type"],
+              let userId = info["name"] else {
             logger.warning("Invalid discovery info received from \(peerID.displayName)")
             return
         }
@@ -417,17 +480,6 @@ final class LocalMatchmakingService: NSObject, ObservableObject {
     private func removeNearbyPlayer(peerID: MCPeerID) {
         self.nearbyPlayers.removeAll { $0.peerID == peerID.displayName }
         logger.info("Removed player: \(peerID.displayName)")
-    }
-    
-    private func checkNetworkReadiness() {
-        // Check basic network conditions
-        logger.info("📱 Device: \(UIDevice.current.name)")
-        logger.info("📱 Model: \(UIDevice.current.model)")
-        logger.info("📱 System: \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
-        
-        // Note: We can't easily check WiFi/Bluetooth status without additional frameworks
-        // But the logs will help debug if the services start properly
-        logger.info("🔧 MultipeerConnectivity will use available transports (WiFi/Bluetooth)")
     }
 }
 
@@ -531,7 +583,7 @@ extension LocalMatchmakingService: MCNearbyServiceAdvertiserDelegate {
         
         // Retry after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-            if self.isInQueue {
+            if let appState = self.appState, appState.isInQueue {
                 self.logger.info("Retrying advertising after network error...")
                 advertiser.startAdvertisingPeer()
             }
@@ -578,7 +630,7 @@ extension LocalMatchmakingService: MCNearbyServiceBrowserDelegate {
         
         // Retry after a delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-            if self.isInQueue {
+            if let appState = self.appState, appState.isInQueue {
                 self.logger.info("Retrying browsing after network error...")
                 browser.startBrowsingForPeers()
             }

@@ -598,6 +598,30 @@ struct PerformanceMetrics: Codable {
     var crashCount: Int = 0
     var metrics: [String: Double] = [:]
     var weeklyMatches: Int = 0
+    
+    // Match-specific metrics
+    var totalPoints: Int = 0
+    var winningShots: Int = 0
+    var errors: Int = 0
+    var aces: Int = 0
+    var winners: Int = 0
+    var netPoints: Int = 0
+    var baselinePoints: Int = 0
+    var averageRallyLength: Double = 0.0
+    var longestRally: Int = 0
+    var timeAtNet: TimeInterval = 0
+    var courtCoverage: Double = 0.0
+    var efficiency: Double = 0.0
+    
+    var winPercentage: Double {
+        guard totalPoints > 0 else { return 0.0 }
+        return Double(winningShots) / Double(totalPoints)
+    }
+    
+    var errorRate: Double {
+        guard totalPoints > 0 else { return 0.0 }
+        return Double(errors) / Double(totalPoints)
+    }
 }
 
 // MARK: - Enhanced Analytics Data Models

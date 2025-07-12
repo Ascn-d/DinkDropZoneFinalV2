@@ -577,6 +577,71 @@ class TournamentService: ObservableObject {
         }
         return power
     }
+    
+    // MARK: - Real-time Update Handling
+    
+    /// Handle real-time tournament updates from centralized RealtimeService
+    func handleRealtimeUpdate(_ tournaments: [Tournament]) {
+        // Update local tournament cache
+        for tournament in tournaments {
+            // Update or add tournament to local cache
+            if let index = self.tournaments.firstIndex(where: { $0.id == tournament.id }) {
+                self.tournaments[index] = tournament
+            } else {
+                self.tournaments.append(tournament)
+            }
+        }
+        
+        // Sort tournaments by start date
+        self.tournaments.sort { $0.startDate < $1.startDate }
+        
+        LoggingService.shared.log("Updated \(tournaments.count) tournaments from real-time sync")
+        
+        // Post notification for tournament views
+        NotificationCenter.default.post(
+            name: .tournamentDataUpdated,
+            object: tournaments
+        )
+    }
+    
+    // MARK: - Real-time Listener Management
+    
+    /// Subscribe to real-time updates for a specific tournament
+    func subscribeToTournamentUpdates(tournamentId: String) {
+        guard let realtimeService = getRealtimeService() else { return }
+        
+        let listenerId = realtimeService.observeTournament(id: tournamentId) { [weak self] result in
+            switch result {
+            case .success(let tournament):
+                self?.handleSingleTournamentUpdate(tournament)
+            case .failure(let error):
+                LoggingService.shared.log("Tournament real-time listener error: \(error)")
+            }
+        }
+        
+        LoggingService.shared.log("Subscribed to real-time updates for tournament: \(tournamentId)")
+    }
+    
+    /// Handle single tournament update
+    private func handleSingleTournamentUpdate(_ tournament: Tournament) {
+        // Update local tournament data
+        if let index = tournaments.firstIndex(where: { $0.id == tournament.id }) {
+            tournaments[index] = tournament
+        }
+        
+        // Post notification for tournament views
+        NotificationCenter.default.post(
+            name: .tournamentUpdated,
+            object: tournament
+        )
+    }
+    
+    /// Get reference to RealtimeService (would be injected in real implementation)
+    private func getRealtimeService() -> RealtimeService? {
+        // In a real implementation, this would be injected via dependency injection
+        // For now, we'll need to access it through AppState or similar
+        return nil
+    }
 }
 
 // MARK: - Supporting Types

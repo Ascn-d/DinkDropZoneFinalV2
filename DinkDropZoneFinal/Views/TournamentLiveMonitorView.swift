@@ -559,17 +559,83 @@ struct TournamentLiveMonitorView: View {
         }
     }
     
+    // MARK: - Enhanced Real-time Setup
+    
     private func startRealTimeUpdates() {
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
+        // Use AppState's centralized match result listeners
+        appState.setupMatchResultListeners(tournamentId: tournament.id.uuidString)
+        
+        // Setup traditional timer as backup
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { _ in
             Task {
                 await loadTournamentData()
             }
+        }
+        
+        // Listen for match completion notifications
+        NotificationCenter.default.addObserver(
+            forName: .matchCompleted,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let match = notification.object as? TournamentMatch {
+                handleMatchCompletion(match)
+            }
+        }
+        
+        // Listen for tournament updates
+        NotificationCenter.default.addObserver(
+            forName: .tournamentUpdated,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let tournament = notification.object as? Tournament {
+                handleTournamentUpdate(tournament)
+            }
+        }
+    }
+    
+    private func handleMatchCompletion(_ match: TournamentMatch) {
+        // Update UI when match is completed
+        if let index = matches.firstIndex(where: { $0.id == match.id }) {
+            matches[index] = match
+        }
+        
+        // Remove from live matches if completed
+        liveMatches.removeAll { $0.id == match.id }
+        
+        updateTournamentStats()
+        
+        let action = TournamentAction(
+            id: UUID().uuidString,
+            type: "match_completed",
+            description: "Match \(match.matchNumber) completed - Winner: \(match.winnerID ?? "Unknown")",
+            timestamp: Date()
+        )
+        recentActions.insert(action, at: 0)
+    }
+    
+    private func handleTournamentUpdate(_ tournament: Tournament) {
+        // Update local tournament data when changes occur
+        if tournament.id == self.tournament.id {
+            self.matches = tournament.matches
+            self.participants = tournament.participants
+            self.liveMatches = tournament.matches.filter { $0.status == "In Progress" }
+            updateTournamentStats()
+            lastUpdateTime = Date()
         }
     }
     
     private func stopRealTimeUpdates() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        
+        // Clean up centralized match result listeners
+        appState.cleanupMatchResultListeners()
+        
+        // Remove notification observers
+        NotificationCenter.default.removeObserver(self, name: .matchCompleted, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .tournamentUpdated, object: nil)
     }
     
     private func updateTournamentStats() {
@@ -619,8 +685,14 @@ struct TournamentLiveMonitorView: View {
             var updatedMatch = match
             updatedMatch.status = "In Progress"
             
-            // Update the match in Firebase through tournament service
-            try await tournamentService.firebaseService.updateTournamentMatch(tournamentId: tournament.id.uuidString, match: updatedMatch)
+            // Use AppState's centralized match update system
+            try await appState.submitMatchResult(
+                match: updatedMatch,
+                winnerID: updatedMatch.winnerID ?? "",
+                loserID: updatedMatch.loserID ?? "",
+                score: updatedMatch.finalScore,
+                tournament: tournament
+            )
             
             await MainActor.run {
                 if let index = matches.firstIndex(where: { $0.id == match.id }) {
@@ -646,8 +718,14 @@ struct TournamentLiveMonitorView: View {
     
     private func updateMatch(_ match: TournamentMatch) async {
         do {
-            // Update the match in Firebase through tournament service
-            try await tournamentService.firebaseService.updateTournamentMatch(tournamentId: tournament.id.uuidString, match: match)
+            // Use AppState's centralized match update system
+            try await appState.submitMatchResult(
+                match: match,
+                winnerID: match.winnerID ?? "",
+                loserID: match.loserID ?? "",
+                score: match.finalScore,
+                tournament: tournament
+            )
             
             await MainActor.run {
                 if let index = matches.firstIndex(where: { $0.id == match.id }) {

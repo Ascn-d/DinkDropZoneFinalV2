@@ -102,9 +102,33 @@ final class LeagueService {
         if let existing = (try? modelContext.fetch(FetchDescriptor<User>()))?.first(where: { $0.id.uuidString == id }) {
             return existing
         }
-        let user = User(email: "temp@placeholder.com", password: "", elo: elo, xp: 0, totalMatches: 0, wins: 0, losses: 0, winStreak: 0)
-        user.id = UUID(uuidString: id) ?? UUID()
-        user.displayName = name
+        
+        // Try to fetch user from Firebase first
+        Task {
+            do {
+                let firebaseUser = try await FirebaseService.shared.getUser(id: id)
+                // Cache this user locally
+                modelContext.insert(firebaseUser)
+                try? modelContext.save()
+                return
+            } catch {
+                print("⚠️ Could not fetch user \(id) from Firebase: \(error)")
+            }
+        }
+        
+        // Create a minimal user placeholder that should be updated from Firebase
+        let user = User(
+            id: UUID(uuidString: id) ?? UUID(),
+            email: "\(id)@firebase.user", // Use Firebase-compatible email format
+            password: "", // Firebase handles auth
+            displayName: name,
+            elo: elo,
+            xp: 0,
+            totalMatches: 0,
+            wins: 0,
+            losses: 0,
+            winStreak: 0
+        )
         modelContext.insert(user)
         return user
     }

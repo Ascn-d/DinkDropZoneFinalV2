@@ -27,7 +27,6 @@ class BracketManager: ObservableObject {
 struct AdvancedInteractiveBracketView: View {
     @State private var tournament: Tournament
     @StateObject private var bracketManager = BracketManager()
-    @StateObject private var tournamentService = TournamentService(firebaseService: FirebaseService.shared)
     @EnvironmentObject private var appState: AppState
     
     // Interactive State
@@ -41,6 +40,7 @@ struct AdvancedInteractiveBracketView: View {
     @State private var showingParticipantSelector = false
     @State private var showingScoreEntry = false
     @State private var connectionAnimations: [UUID: Bool] = [:]
+    @State private var tournamentListener: FirebaseService.ListenerHandle?
     
     // Visual Effects
     @State private var glowEffect = false
@@ -125,6 +125,9 @@ struct AdvancedInteractiveBracketView: View {
         }
         .onAppear {
             setupBracket()
+        }
+        .onDisappear {
+            cleanupListeners()
         }
         .onChange(of: tournament.matches) { _, _ in
             updateConnectionAnimations()
@@ -450,15 +453,80 @@ struct AdvancedInteractiveBracketView: View {
     // MARK: - Action Handlers
     
     private func setupBracket() {
-        withAnimation(.spring(response: 1.0, dampingFraction: 0.8).delay(0.3)) {
-            animateEntrance = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.spring(response: 1.0, dampingFraction: 0.8)) {
+                animateEntrance = true
+            }
         }
         
-        withAnimation(.easeInOut(duration: 2).delay(0.5)) {
-            glowEffect = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                glowEffect = true
+            }
         }
         
-        updateConnectionAnimations()
+        // Setup real-time Firebase listeners
+        setupRealtimeListeners()
+    }
+    
+    private func setupRealtimeListeners() {
+        tournamentListener = appState.firebaseService.observeTournament(id: tournament.id.uuidString) { result in
+            switch result {
+            case .success(let updatedTournament):
+                Task {
+                    await MainActor.run {
+                        let hasChanges = updatedTournament.matches.count != tournament.matches.count ||
+                            updatedTournament.matches.contains { oldMatch in
+                                guard let newMatch = tournament.matches.first(where: { $0.id == oldMatch.id }) else { return true }
+                                return oldMatch.status != newMatch.status || oldMatch.finalScore != newMatch.finalScore
+                            }
+                        
+                        if hasChanges {
+                            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                tournament = updatedTournament
+                            }
+                            
+                            // Check for new match completions and trigger celebrations
+                            checkForNewCompletions(updatedTournament)
+                            
+                            // Update connection animations
+                            updateConnectionAnimations()
+                            
+                            // Haptic feedback for updates
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                    }
+                }
+            case .failure(let error):
+                print("❌ Tournament listener error: \(error)")
+            }
+        }
+    }
+    
+    private func cleanupListeners() {
+        tournamentListener?.remove()
+        tournamentListener = nil
+    }
+    
+    private func checkForNewCompletions(_ updatedTournament: Tournament) {
+        // Check for newly completed matches and trigger celebrations
+        let newlyCompletedMatches = updatedTournament.matches.filter { match in
+            match.status == "Completed" && 
+            !(tournament.matches.first(where: { $0.id == match.id })?.status == "Completed")
+        }
+        
+        if !newlyCompletedMatches.isEmpty {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.6)) {
+                showingConfetti = true
+            }
+            
+            // Hide confetti after 3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                withAnimation(.easeOut(duration: 1)) {
+                    showingConfetti = false
+                }
+            }
+        }
     }
     
     private func handleMatchTap(_ match: TournamentMatch) {

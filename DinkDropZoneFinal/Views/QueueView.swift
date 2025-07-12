@@ -917,42 +917,74 @@ struct QueueView: View {
         
         Task {
             do {
-                // Try local matchmaking first for immediate testing
-                try await appState.startLocalMatchmaking(matchType: matchType)
+                // Use Firebase-based real-time matchmaking only
+                try await appState.joinRealtimeQueue(matchType: matchType)
                 
                 await MainActor.run {
                     withAnimation {
                         isInQueue = true
                         selectedMatchType = matchType
-                        // Real values come from the local service
+                        // Real values come from AppState bindings
                         queuePosition = appState.queuePosition
                         estimatedWaitTime = Int(appState.estimatedWaitTime / 60) // Convert to minutes
                     }
                 }
                 
                 // Show success message
-                print("✅ Successfully joined local matchmaking queue!")
+                print("✅ Successfully joined Firebase real-time matchmaking queue!")
                 
             } catch {
-                print("❌ Failed to join queue: \(error)")
+                print("❌ Failed to join Firebase real-time queue: \(error)")
                 
-                // Fallback to Firebase if local fails (for production)
-                // try await appState.joinRealtimeQueue(matchType: matchType)
+                // Show error to user instead of falling back
+                await MainActor.run {
+                    // Display error message to user
+                    appState.addNotification(AppNotification(
+                        type: .error,
+                        title: "Matchmaking Error",
+                        message: "Unable to join matchmaking. Please check your connection and try again.",
+                        data: [:]
+                    ))
+                }
             }
         }
     }
     
     private func leaveQueue() {
-        appState.stopLocalMatchmaking()
-        
-        withAnimation {
-            isInQueue = false
-            selectedMatchType = .singles
-            queuePosition = 0
-            estimatedWaitTime = 0
+        Task {
+            do {
+                // Use Firebase-based real-time queue only
+                try await appState.leaveRealtimeQueue()
+                print("✅ Successfully left Firebase real-time matchmaking queue!")
+                
+                await MainActor.run {
+                    withAnimation {
+                        isInQueue = false
+                        selectedMatchType = .singles
+                        queuePosition = 0
+                        estimatedWaitTime = 0
+                    }
+                }
+            } catch {
+                print("❌ Failed to leave Firebase real-time queue: \(error)")
+                
+                // Force local state update even if Firebase call fails
+                await MainActor.run {
+                    withAnimation {
+                        isInQueue = false
+                        selectedMatchType = .singles
+                        queuePosition = 0
+                        estimatedWaitTime = 0
+                    }
+                    appState.addNotification(AppNotification(
+                        type: .error,
+                        title: "Queue Error",
+                        message: "Error leaving queue, but you have been removed locally.",
+                        data: [:]
+                    ))
+                }
+            }
         }
-        
-        print("✅ Successfully left local matchmaking queue!")
     }
     
     private func startRefreshTimer() {
@@ -967,11 +999,16 @@ struct QueueView: View {
     }
     
     private func refreshData() {
-        // Simulate data refresh
-        if isInQueue && queuePosition > 1 {
-            queuePosition = max(1, queuePosition - 1)
-            estimatedWaitTime = max(1, estimatedWaitTime - 1)
+        // Update queue position and wait time from AppState
+        if isInQueue {
+            // Use centralized AppState data
+            queuePosition = appState.queuePosition
+            estimatedWaitTime = Int(appState.estimatedWaitTime / 60)
         }
+        
+        // Update enhanced queue statistics
+        queueStatistics.refresh()
+        queueOptimizer.updateRecommendations()
     }
     
     private func handleMatchResult(_ result: Result<Match, Error>) {
@@ -1061,6 +1098,7 @@ struct QueueView: View {
     // MARK: - Notification Observers
     
     private func setupNotificationObservers() {
+        // Local match proposal handling
         NotificationCenter.default.addObserver(
             forName: .localMatchProposalReceived,
             object: nil,
@@ -1072,6 +1110,43 @@ struct QueueView: View {
             }
         }
         
+        // Real-time match proposal handling
+        NotificationCenter.default.addObserver(
+            forName: .matchProposed,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let proposal = notification.object as? RealtimeMatchmakingService.MatchProposal {
+                print("🔔 Received real-time match proposal: \(proposal.player2Name)")
+                // Convert real-time proposal to local match for UI consistency
+                let localMatch = LocalMatchmakingService.LocalMatch(
+                    id: proposal.id,
+                    player1: LocalMatchmakingService.NearbyPlayer(
+                        id: proposal.player1Id,
+                        displayName: proposal.player1Name,
+                        elo: 1200,
+                        matchType: proposal.matchType,
+                        distance: 0.0,
+                        peerID: "realtime"
+                    ),
+                    player2: LocalMatchmakingService.NearbyPlayer(
+                        id: proposal.player2Id,
+                        displayName: proposal.player2Name,
+                        elo: 1200,
+                        matchType: proposal.matchType,
+                        distance: 0.0,
+                        peerID: "realtime"
+                    ),
+                    matchType: proposal.matchType,
+                    createdAt: proposal.createdAt
+                )
+                
+                pendingMatch = localMatch
+                showMatchProposal = true
+            }
+        }
+        
+        // Other notification observers...
         NotificationCenter.default.addObserver(
             forName: .localMatchAccepted,
             object: nil,
@@ -1325,7 +1400,7 @@ struct CourtAvailability: Identifiable {
     }
 }
 
-struct TournamentCard: View {
+struct QueueTournamentCard: View {
     let tournament: Tournament
     let action: () -> Void
     
@@ -2541,7 +2616,7 @@ struct AsyncTournamentsView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(tournaments.prefix(5), id: \.id) { tournament in
-                            TournamentCard(tournament: tournament) {
+                            QueueTournamentCard(tournament: tournament) {
                                 // Navigate to tournament details
                                 NotificationCenter.default.post(name: .navigateToTournaments, object: nil)
                             }

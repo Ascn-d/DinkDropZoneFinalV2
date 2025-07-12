@@ -1451,10 +1451,7 @@ extension View {
         modifier(TypewriterModifier(text: text, speed: speed))
     }
     
-    /// Applies particle effect background
-    func dsParticleEffect(isActive: Bool = true) -> some View {
-        modifier(ParticleEffectModifier(isActive: isActive))
-    }
+    // ParticleEffectModifier functionality moved to TournamentDesignSystem.swift
     
     /// Applies smooth rotation animation
     func dsRotating(isActive: Bool = true, duration: Double = 2.0) -> some View {
@@ -1592,50 +1589,7 @@ struct TypewriterModifier: ViewModifier {
     }
 }
 
-struct ParticleEffectModifier: ViewModifier {
-    let isActive: Bool
-    @State private var particles: [ParticleData] = []
-    
-    func body(content: Content) -> some View {
-        content
-            .background(
-                ZStack {
-                    ForEach(particles, id: \.id) { particle in
-                        Circle()
-                            .fill(DS.Color.accent.opacity(0.3))
-                            .frame(width: particle.size, height: particle.size)
-                            .position(particle.position)
-                            .opacity(particle.opacity)
-                    }
-                }
-            )
-            .onAppear {
-                if isActive {
-                    startParticleAnimation()
-                }
-            }
-    }
-    
-    private func startParticleAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            guard isActive else { return }
-            
-            let newParticle = ParticleData()
-            particles.append(newParticle)
-            
-            withAnimation(.linear(duration: 3.0)) {
-                if let index = particles.firstIndex(where: { $0.id == newParticle.id }) {
-                    particles[index].position.y -= 200
-                    particles[index].opacity = 0
-                }
-            }
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                particles.removeAll { $0.id == newParticle.id }
-            }
-        }
-    }
-}
+// ParticleEffectModifier moved to TournamentDesignSystem.swift
 
 struct RotatingModifier: ViewModifier {
     let isActive: Bool

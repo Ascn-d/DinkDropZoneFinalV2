@@ -272,11 +272,38 @@ final class SocialService {
     // MARK: - Leaderboards
     
     func updateLeaderboard() {
-        // Fetch all users and sort by different criteria
+        Task {
+            do {
+                // Fetch users from Firebase instead of local storage
+                let firebaseUsers = try await FirebaseService.shared.getGlobalLeaderboard(limit: 100)
+                
+                await MainActor.run {
+                    // ELO Leaderboard
+                    let eloSorted = firebaseUsers.sorted { $0.elo > $1.elo }
+                    leaderboard = eloSorted.enumerated().map { index, user in
+                        LeaderboardEntry(
+                            rank: index + 1,
+                            user: user,
+                            value: user.elo,
+                            metric: .elo,
+                            change: calculateRankChange(for: user, metric: .elo)
+                        )
+                    }
+                }
+                
+                print("✅ Updated leaderboard with \(firebaseUsers.count) Firebase users")
+            } catch {
+                print("❌ Failed to update leaderboard from Firebase: \(error)")
+                // Fallback to local data if Firebase fails
+                updateLeaderboardFromLocal()
+            }
+        }
+    }
+    
+    private func updateLeaderboardFromLocal() {
         let descriptor = FetchDescriptor<User>()
         let allUsers = (try? modelContext.fetch(descriptor)) ?? []
         
-        // ELO Leaderboard
         let eloSorted = allUsers.sorted { $0.elo > $1.elo }
         leaderboard = eloSorted.enumerated().map { index, user in
             LeaderboardEntry(
@@ -290,30 +317,30 @@ final class SocialService {
     }
     
     func getLeaderboard(for metric: LeaderboardMetric, limit: Int = 50) -> [LeaderboardEntry] {
-        let descriptor = FetchDescriptor<User>()
-        let allUsers = (try? modelContext.fetch(descriptor)) ?? []
+        // Return current leaderboard data (which is now sourced from Firebase)
+        let sortedLeaderboard: [LeaderboardEntry]
         
-        let sorted: [User]
         switch metric {
         case .elo:
-            sorted = allUsers.sorted { $0.elo > $1.elo }
+            sortedLeaderboard = leaderboard // Already sorted by ELO
         case .wins:
-            sorted = allUsers.sorted { $0.wins > $1.wins }
+            sortedLeaderboard = leaderboard.sorted { $0.user.wins > $1.user.wins }
         case .winRate:
-            sorted = allUsers.sorted { $0.winRate > $1.winRate }
+            sortedLeaderboard = leaderboard.sorted { $0.user.winRate > $1.user.winRate }
         case .winStreak:
-            sorted = allUsers.sorted { $0.winStreak > $1.winStreak }
+            sortedLeaderboard = leaderboard.sorted { $0.user.winStreak > $1.user.winStreak }
         case .totalMatches:
-            sorted = allUsers.sorted { $0.totalMatches > $1.totalMatches }
+            sortedLeaderboard = leaderboard.sorted { $0.user.totalMatches > $1.user.totalMatches }
         }
         
-        return Array(sorted.prefix(limit)).enumerated().map { index, user in
+        // Update ranks and values for the new metric
+        return Array(sortedLeaderboard.prefix(limit)).enumerated().map { index, entry in
             LeaderboardEntry(
                 rank: index + 1,
-                user: user,
-                value: getMetricValue(for: user, metric: metric),
+                user: entry.user,
+                value: getMetricValue(for: entry.user, metric: metric),
                 metric: metric,
-                change: calculateRankChange(for: user, metric: metric)
+                change: calculateRankChange(for: entry.user, metric: metric)
             )
         }
     }
@@ -321,12 +348,27 @@ final class SocialService {
     // MARK: - Court & Location Features
     
     func findNearbyPlayers(for user: User, radius: Double = 50.0) -> [User] {
-        // In a real app, this would use location services
-        // For now, return users in same location
-        let descriptor = FetchDescriptor<User>()
-        let allUsers = (try? modelContext.fetch(descriptor)) ?? []
+        // Use Firebase to find nearby players
+        guard let userLat = user.lat, let userLon = user.lon else {
+            print("⚠️ User location not available for nearby player search")
+            return []
+        }
         
-        return allUsers.filter { $0.location == user.location && $0.id != user.id }
+        // For now, return a filtered subset from current leaderboard
+        // In a production app, you'd implement proper geospatial queries
+        return leaderboard.compactMap { entry in
+            let otherUser = entry.user
+            guard otherUser.id != user.id,
+                  let otherLat = otherUser.lat,
+                  let otherLon = otherUser.lon else { return nil }
+            
+            // Calculate distance using simple formula (for demo purposes)
+            let deltaLat = userLat - otherLat
+            let deltaLon = userLon - otherLon
+            let distance = sqrt(deltaLat * deltaLat + deltaLon * deltaLon) * 111 // Rough km conversion
+            
+            return distance <= radius ? otherUser : nil
+        }
     }
     
     func findNearbyCourts(for location: String) -> [Court] {
@@ -341,8 +383,20 @@ final class SocialService {
     // MARK: - Private Helper Methods
     
     private func sendNotification(to user: User, type: String, title: String, message: String) {
-        // In a real app, this would send push notifications
-        LoggingService.shared.log("Notification sent to \(user.displayName): \(title)")
+        // Send notification through Firebase
+        Task {
+            do {
+                try await FirebaseService.shared.addNotification(
+                    userId: user.id.uuidString,
+                    type: type,
+                    title: title,
+                    message: message
+                )
+                LoggingService.shared.log("Firebase notification sent to \(user.displayName): \(title)")
+            } catch {
+                LoggingService.shared.log("Failed to send Firebase notification to \(user.displayName): \(error)")
+            }
+        }
     }
     
     private func calculateRankChange(for user: User, metric: LeaderboardMetric) -> Int {
@@ -366,14 +420,19 @@ final class SocialService {
     }
     
     private func generateSampleData() {
-        // Generate sample community posts
-        generateSamplePosts()
-        
-        // Generate sample conversations
-        generateSampleConversations()
-        
-        // Update leaderboard
+        // Update leaderboard from Firebase first
         updateLeaderboard()
+        
+        // Then generate sample community posts using Firebase users
+        Task {
+            // Wait a bit for leaderboard to populate from Firebase
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            
+            await MainActor.run {
+                generateSamplePosts()
+                generateSampleConversations()
+            }
+        }
     }
     
     private func generateSamplePosts() {
@@ -435,22 +494,8 @@ final class SocialService {
     }
     
     private func generateSampleUsers() -> [User] {
-        let names = ["Alex Chen", "Sarah Kim", "Mike Johnson", "Emma Wilson", "David Park"]
-        return names.map { name in
-            let user = User(
-                email: "\(name.lowercased().replacingOccurrences(of: " ", with: "."))@example.com",
-                password: "password",
-                elo: Int.random(in: 1000...2000),
-                xp: Int.random(in: 500...3000),
-                totalMatches: Int.random(in: 10...80),
-                wins: Int.random(in: 5...50),
-                losses: Int.random(in: 3...30),
-                winStreak: Int.random(in: 0...8)
-            )
-            user.displayName = name
-            user.location = "San Francisco"
-            return user
-        }
+        // Return a subset of users from the leaderboard (which comes from Firebase)
+        return Array(leaderboard.prefix(5).map { $0.user })
     }
 }
 

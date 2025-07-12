@@ -453,7 +453,7 @@ struct CreateLeagueWizard: View {
     }
     
     private func createTournament() {
-        guard let tournamentService = appState.tournamentService,
+        guard let tournamentService = appState.getTournamentService(),
               let currentUser = appState.currentUser else {
             errorMessage = "Tournament service not available"
             return

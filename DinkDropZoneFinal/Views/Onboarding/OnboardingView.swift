@@ -804,7 +804,7 @@ struct ConfettiView: View {
         ZStack {
             ForEach(0..<50, id: \.self) { index in
                 Circle()
-                    .fill(Color.random)
+                    .fill(Color.randomColor)
                     .frame(width: CGFloat.random(in: 4...12))
                     .position(
                         x: CGFloat.random(in: 0...UIScreen.main.bounds.width),
@@ -825,7 +825,7 @@ struct ConfettiView: View {
 }
 
 extension Color {
-    static var random: Color {
+    static var randomColor: Color {
         return Color(
             red: .random(in: 0...1),
             green: .random(in: 0...1),

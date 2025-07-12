@@ -845,12 +845,12 @@ struct PlayerProfileSheet: View {
                 .foregroundColor(DS.Color.primary)
             
             HStack(spacing: DS.Layout.itemSpacing) {
-                StatCard(title: "ELO", value: "\(participant.elo)", icon: "star.fill", color: .blue)
-                StatCard(title: "Wins", value: "\(participant.wins)", icon: "checkmark.circle.fill", color: .green)
-                StatCard(title: "Losses", value: "\(participant.losses)", icon: "xmark.circle.fill", color: .red)
+                StatCard(title: "ELO", value: "\(participant.elo)", color: .blue)
+                StatCard(title: "Wins", value: "\(participant.wins)", color: .green)
+                StatCard(title: "Losses", value: "\(participant.losses)", color: .red)
                 
                 if let placement = participant.placement {
-                    StatCard(title: "Place", value: "#\(placement)", icon: "trophy.fill", color: .orange)
+                    StatCard(title: "Place", value: "#\(placement)", color: .orange)
                 }
             }
         }
@@ -893,36 +893,4 @@ struct PlayerProfileSheet: View {
         }())
 }
 
-// MARK: - Local StatCard for Profile Sheet
-struct StatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color)
-            
-            Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
-            
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(width: 80, height: 80)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(color.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(color.opacity(0.3), lineWidth: 1)
-                )
-        )
-    }
-} 
+ 

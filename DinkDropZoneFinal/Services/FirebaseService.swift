@@ -333,22 +333,257 @@ final class FirebaseService {
         return updatedUser
     }
 
-    // MARK: - LEAGUE MANAGEMENT (placeholders, still to be implemented remotely)
-    func createLeague(_ league: PickleLeague) async throws {
-        // TODO: Implement once backend schema finalised
+    // MARK: - LEAGUE MANAGEMENT
+    
+    /// Creates a new league in Firestore
+    func createLeague(_ league: PickleLeague) async throws -> String {
+        let leagueData = encodeLeague(league)
+        
+        try await perform {
+            try await db.collection("leagues").document(league.id).setData(leagueData)
+        }
+        
+        print("✅ League created in Firebase: \(league.name) (ID: \(league.id))")
+        return league.id
     }
 
-    func updateLeague(_ league: PickleLeague) async throws {}
-    func getLeague(id: String) async throws -> PickleLeague { throw FirebaseError.unknown }
-    func getLeagues() async throws -> [PickleLeague] { [] }
-    func joinLeague(_ league: PickleLeague, user: User) async throws {}
-    func leaveLeague(_ league: PickleLeague, user: User) async throws {}
-    func startLeague(_ league: PickleLeague) async throws {}
+    /// Updates league in Firestore
+    func updateLeague(_ league: PickleLeague) async throws {
+        let leagueData = encodeLeague(league)
+        
+        try await perform {
+            try await db.collection("leagues").document(league.id).updateData(leagueData)
+        }
+        
+        print("✅ League updated in Firebase: \(league.name)")
+    }
+    
+    /// Gets a specific league
+    func getLeague(id: String) async throws -> PickleLeague {
+        let snapshot: DocumentSnapshot = try await perform {
+            try await db.collection("leagues").document(id).getDocument()
+        }
+        guard let data = snapshot.data() else { 
+            print("❌ League not found: \(id)")
+            throw FirebaseError.invalidUser 
+        }
+        
+        let league = try decodeLeague(from: data, id: id)
+        print("✅ League fetched from Firebase: \(league.name)")
+        return league
+    }
+    
+    /// Gets all leagues with optional filtering
+    func getLeagues(status: String? = nil, limit: Int? = nil) async throws -> [PickleLeague] {
+        var query: Query = db.collection("leagues")
+            .order(by: "startDate", descending: false)
+        
+        if let status = status {
+            query = query.whereField("status", isEqualTo: status)
+        }
+        
+        if let limit = limit {
+            query = query.limit(to: limit)
+        }
+        
+        let snapshot = try await perform {
+            try await query.getDocuments()
+        }
+        
+        var leagues: [PickleLeague] = []
+        for doc in snapshot.documents {
+            if let league = try? decodeLeague(from: doc.data(), id: doc.documentID) {
+                leagues.append(league)
+            }
+        }
+        
+        print("✅ Fetched \(leagues.count) leagues from Firebase")
+        return leagues
+    }
+    
+    /// User joins a league
+    func joinLeague(_ league: PickleLeague, user: User) async throws {
+        let leagueRef = db.collection("leagues").document(league.id)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let leagueDoc: DocumentSnapshot
+            do {
+                leagueDoc = try transaction.getDocument(leagueRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = leagueDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "League not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var league = try? self.decodeLeague(from: data, id: league.id) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode league"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Check if user is already in league
+            guard !league.players.contains(where: { $0.id == user.id }) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "User already in league"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Check if league is full
+            guard league.currentPlayers < league.maxPlayers else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "League is full"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Add user to league
+            league.addPlayer(user)
+            
+            let updatedData = self.encodeLeague(league)
+            transaction.updateData(updatedData, forDocument: leagueRef)
+            
+            return nil
+        }
+        
+        print("✅ User \(user.displayName) joined league: \(league.name)")
+    }
+    
+    /// User leaves a league
+    func leaveLeague(_ league: PickleLeague, user: User) async throws {
+        let leagueRef = db.collection("leagues").document(league.id)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let leagueDoc: DocumentSnapshot
+            do {
+                leagueDoc = try transaction.getDocument(leagueRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = leagueDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "League not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var league = try? self.decodeLeague(from: data, id: league.id) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode league"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Remove user from league
+            league.removePlayer(user)
+            
+            let updatedData = self.encodeLeague(league)
+            transaction.updateData(updatedData, forDocument: leagueRef)
+            
+            return nil
+        }
+        
+        print("✅ User \(user.displayName) left league: \(league.name)")
+    }
+    
+    /// Starts a league (for organizers)
+    func startLeague(_ league: PickleLeague) async throws {
+        let leagueRef = db.collection("leagues").document(league.id)
+        
+        _ = try await db.runTransaction { transaction, errorPointer in
+            let leagueDoc: DocumentSnapshot
+            do {
+                leagueDoc = try transaction.getDocument(leagueRef)
+            } catch let fetchError as NSError {
+                errorPointer?.pointee = fetchError
+                return nil
+            }
+            
+            guard let data = leagueDoc.data() else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "League not found"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard var league = try? self.decodeLeague(from: data, id: league.id) else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to decode league"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Check if league can be started
+            guard league.status == .open else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "League cannot be started from status: \(league.status.rawValue)"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            guard league.players.count >= 4 else {
+                let error = NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Need at least 4 players to start league"])
+                errorPointer?.pointee = error
+                return nil
+            }
+            
+            // Update league status
+            league.status = .inProgress
+            league.updatedAt = Date()
+            
+            let updatedData = self.encodeLeague(league)
+            transaction.updateData(updatedData, forDocument: leagueRef)
+            
+            return nil
+        }
+        
+        print("✅ League started: \(league.name)")
+    }
 
-    // MARK: - MATCH MANAGEMENT (placeholders)
-    func createMatch(_ match: LeagueMatch) async throws {}
-    func updateMatch(_ match: LeagueMatch) async throws {}
-    func getMatches(for league: PickleLeague) async throws -> [LeagueMatch] { [] }
+    // MARK: - LEAGUE MATCH MANAGEMENT
+    
+    /// Creates a new league match
+    func createMatch(_ match: LeagueMatch) async throws -> String {
+        let matchData = encodeLeagueMatch(match)
+        
+        try await perform {
+            try await db.collection("league_matches").document(match.id).setData(matchData)
+        }
+        
+        print("✅ League match created in Firebase: \(match.id)")
+        return match.id
+    }
+    
+    /// Updates league match
+    func updateMatch(_ match: LeagueMatch) async throws {
+        let matchData = encodeLeagueMatch(match)
+        
+        try await perform {
+            try await db.collection("league_matches").document(match.id).updateData(matchData)
+        }
+        
+        print("✅ League match updated in Firebase: \(match.id)")
+    }
+    
+    /// Gets all matches for a league
+    func getMatches(for league: PickleLeague) async throws -> [LeagueMatch] {
+        let snapshot = try await perform {
+            try await db.collection("league_matches")
+                .whereField("leagueId", isEqualTo: league.id)
+                .order(by: "round")
+                .getDocuments()
+        }
+        
+        var matches: [LeagueMatch] = []
+        for doc in snapshot.documents {
+            if let match = try? decodeLeagueMatch(from: doc.data(), id: doc.documentID) {
+                matches.append(match)
+            }
+        }
+        
+        print("✅ Fetched \(matches.count) matches for league: \(league.name)")
+        return matches
+    }
 
     // MARK: - MATCH MANAGEMENT
     
@@ -935,6 +1170,39 @@ final class FirebaseService {
             data: dict["data"] as? [String: Any] ?? [:]
         )
     }
+    
+    /// Decode TournamentNotification from Firebase document
+    private func decodeTournamentNotification(from dict: [String: Any], id: String) throws -> AppState.TournamentNotification {
+        let type = dict["type"] as? String ?? "matchReady"
+        let title = dict["title"] as? String ?? ""
+        let message = dict["message"] as? String ?? ""
+        let tournamentID = dict["tournamentID"] as? String
+        let timestamp = (dict["timestamp"] as? Timestamp)?.dateValue() ?? Date()
+        let isRead = dict["isRead"] as? Bool ?? false
+        
+        let notificationType: AppState.TournamentNotification.NotificationType
+        switch type {
+        case "matchReady": notificationType = .matchReady
+        case "tournamentStarted": notificationType = .tournamentStarted
+        case "roundCompleted": notificationType = .roundCompleted
+        case "bracketUpdated": notificationType = .bracketUpdated
+        case "tournamentCompleted": notificationType = .tournamentCompleted
+        case "registrationOpened": notificationType = .registrationOpened
+        case "registrationClosed": notificationType = .registrationClosed
+        case "prizeDistributed": notificationType = .prizeDistributed
+        default: notificationType = .matchReady
+        }
+        
+        return AppState.TournamentNotification(
+            id: id,
+            type: notificationType,
+            title: title,
+            message: message,
+            tournamentID: tournamentID,
+            timestamp: timestamp,
+            isRead: isRead
+        )
+    }
 
     // MARK: - TOURNAMENT MANAGEMENT
     
@@ -1082,6 +1350,35 @@ final class FirebaseService {
                     }
                     print("🔄 All tournaments updated via listener: \(tournaments.count) tournaments")
                     onChange(.success(tournaments))
+                }
+            }
+        return ListenerHandle { listener.remove() }
+    }
+    
+    /// Real-time listener for tournament collection (alias for observeAllTournaments)
+    func observeTournamentCollection(onChange: @escaping (Result<[Tournament], Error>) -> Void) -> ListenerHandle {
+        return observeAllTournaments(onChange: onChange)
+    }
+    
+    /// Real-time listener for tournament notifications
+    func observeTournamentNotifications(userID: String, onChange: @escaping (Result<[AppState.TournamentNotification], Error>) -> Void) -> ListenerHandle {
+        print("🔔 Setting up tournament notifications listener for user: \(userID)")
+        let listener = db.collection("tournament_notifications")
+            .whereField("userID", isEqualTo: userID)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { snapshot, error in
+                if let error {
+                    print("❌ Tournament notifications listener error: \(error)")
+                    onChange(.failure(self.mapFirestoreError(error)))
+                } else if let snap = snapshot {
+                    var notifications: [AppState.TournamentNotification] = []
+                    for doc in snap.documents {
+                        if let notification = try? self.decodeTournamentNotification(from: doc.data(), id: doc.documentID) {
+                            notifications.append(notification)
+                        }
+                    }
+                    print("🔔 Tournament notifications updated: \(notifications.count) notifications")
+                    onChange(.success(notifications))
                 }
             }
         return ListenerHandle { listener.remove() }
@@ -1282,6 +1579,52 @@ final class FirebaseService {
         }
         
         print("✅ Successfully updated match result")
+    }
+    
+    /// Updates live match score for real-time synchronization
+    func updateLiveMatchScore(
+        tournamentId: String,
+        matchId: String,
+        scoreData: [String: Any]
+    ) async throws {
+        print("📊 Updating live match score: \(matchId) in tournament: \(tournamentId)")
+        
+        let liveMatchRef = db.collection("tournaments")
+            .document(tournamentId)
+            .collection("liveMatches")
+            .document(matchId)
+        
+        try await perform {
+            try await liveMatchRef.setData(scoreData, merge: true)
+        }
+        
+        print("✅ Live match score updated successfully")
+    }
+    
+    /// Listen to live match score updates
+    func observeLiveMatchScore(
+        tournamentId: String,
+        matchId: String,
+        onChange: @escaping (Result<[String: Any], Error>) -> Void
+    ) -> ListenerHandle {
+        print("🔄 Setting up live match score listener: \(matchId)")
+        
+        let liveMatchRef = db.collection("tournaments")
+            .document(tournamentId)
+            .collection("liveMatches")
+            .document(matchId)
+        
+        let listener = liveMatchRef.addSnapshotListener { snapshot, error in
+            if let error = error {
+                print("❌ Live match score listener error: \(error)")
+                onChange(.failure(self.mapFirestoreError(error)))
+            } else if let snap = snapshot, let data = snap.data() {
+                print("📊 Live match score updated: \(data)")
+                onChange(.success(data))
+            }
+        }
+        
+        return ListenerHandle { listener.remove() }
     }
     
     /// Batch update tournament matches
@@ -1985,3 +2328,465 @@ final class FirebaseService {
         )
     }
 } 
+
+// MARK: - League Encoding/Decoding Methods
+
+extension FirebaseService {
+    
+    /// Encodes a PickleLeague object to Firestore data
+    private func encodeLeague(_ league: PickleLeague) -> [String: Any] {
+        var data: [String: Any] = [
+            "id": league.id,
+            "name": league.name,
+            "description": league.leagueDescription,
+            "location": league.location,
+            "imageUrl": league.imageUrl as Any,
+            "rating": league.rating,
+            "format": league.format.rawValue,
+            "status": league.status.rawValue,
+            "startDate": Timestamp(date: league.startDate),
+            "endDate": Timestamp(date: league.endDate),
+            "maxPlayers": league.maxPlayers,
+            "currentPlayers": league.currentPlayers,
+            "rules": league.rules,
+            "prizePool": league.prizePool,
+            "entryFee": league.entryFee,
+            "schedule": league.schedule as Any,
+            "nextGame": league.nextGame as Any,
+            "tags": league.tags,
+            "skillLevel": league.skillLevel as Any,
+            "createdAt": Timestamp(date: league.createdAt),
+            "updatedAt": Timestamp(date: league.updatedAt)
+        ]
+        
+        // Encode players
+        let playersData = league.players.map { player in
+            return [
+                "id": player.id.uuidString,
+                "email": player.email,
+                "displayName": player.displayName,
+                "elo": player.elo,
+                "xp": player.xp,
+                "totalMatches": player.totalMatches,
+                "wins": player.wins,
+                "losses": player.losses,
+                "winStreak": player.winStreak
+            ]
+        }
+        data["players"] = playersData
+        
+        // Encode standings
+        let standingsData = league.standings.map { standing in
+            return [
+                "playerId": standing.playerId,
+                "wins": standing.wins,
+                "losses": standing.losses,
+                "pointsFor": standing.pointsFor,
+                "pointsAgainst": standing.pointsAgainst
+            ]
+        }
+        data["standings"] = standingsData
+        
+        return data
+    }
+    
+    /// Decodes Firestore data to a PickleLeague object
+    private func decodeLeague(from data: [String: Any], id: String) throws -> PickleLeague {
+        guard let name = data["name"] as? String,
+              let description = data["description"] as? String,
+              let location = data["location"] as? String,
+              let rating = data["rating"] as? Double,
+              let formatString = data["format"] as? String,
+              let format = LeagueFormat(rawValue: formatString),
+              let statusString = data["status"] as? String,
+              let status = LeagueStatus(rawValue: statusString),
+              let startDate = (data["startDate"] as? Timestamp)?.dateValue(),
+              let endDate = (data["endDate"] as? Timestamp)?.dateValue(),
+              let maxPlayers = data["maxPlayers"] as? Int,
+              let currentPlayers = data["currentPlayers"] as? Int,
+              let rules = data["rules"] as? [String],
+              let prizePool = data["prizePool"] as? Int,
+              let entryFee = data["entryFee"] as? Int,
+              let tags = data["tags"] as? [String],
+              let createdAt = (data["createdAt"] as? Timestamp)?.dateValue(),
+              let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() else {
+            throw FirebaseError.decoding
+        }
+        
+        // Decode players
+        var players: [User] = []
+        if let playersData = data["players"] as? [[String: Any]] {
+            for playerData in playersData {
+                if let idString = playerData["id"] as? String,
+                   let playerId = UUID(uuidString: idString),
+                   let email = playerData["email"] as? String,
+                   let displayName = playerData["displayName"] as? String,
+                   let elo = playerData["elo"] as? Int,
+                   let xp = playerData["xp"] as? Int,
+                   let totalMatches = playerData["totalMatches"] as? Int,
+                   let wins = playerData["wins"] as? Int,
+                   let losses = playerData["losses"] as? Int,
+                   let winStreak = playerData["winStreak"] as? Int {
+                    
+                    let player = User(
+                        id: playerId,
+                        email: email,
+                        password: "", // Firebase handles auth
+                        displayName: displayName,
+                        elo: elo,
+                        xp: xp,
+                        totalMatches: totalMatches,
+                        wins: wins,
+                        losses: losses,
+                        winStreak: winStreak
+                    )
+                    players.append(player)
+                }
+            }
+        }
+        
+        // Decode standings
+        var standings: [Standing] = []
+        if let standingsData = data["standings"] as? [[String: Any]] {
+            for standingData in standingsData {
+                if let playerId = standingData["playerId"] as? String,
+                   let wins = standingData["wins"] as? Int,
+                   let losses = standingData["losses"] as? Int,
+                   let pointsFor = standingData["pointsFor"] as? Int,
+                   let pointsAgainst = standingData["pointsAgainst"] as? Int {
+                    
+                    let standing = Standing(
+                        playerId: playerId,
+                        wins: wins,
+                        losses: losses,
+                        pointsFor: pointsFor,
+                        pointsAgainst: pointsAgainst
+                    )
+                    standings.append(standing)
+                }
+            }
+        }
+        
+        return PickleLeague(
+            id: id,
+            name: name,
+            leagueDescription: description,
+            location: location,
+            imageUrl: data["imageUrl"] as? String,
+            rating: rating,
+            format: format,
+            status: status,
+            startDate: startDate,
+            endDate: endDate,
+            maxPlayers: maxPlayers,
+            currentPlayers: currentPlayers,
+            players: players,
+            matches: [], // Matches are stored separately
+            standings: standings,
+            rules: rules,
+            prizePool: prizePool,
+            entryFee: entryFee,
+            schedule: data["schedule"] as? String,
+            nextGame: data["nextGame"] as? String,
+            tags: tags,
+            skillLevel: data["skillLevel"] as? String,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
+    /// Encodes a LeagueMatch object to Firestore data
+    private func encodeLeagueMatch(_ leagueMatch: LeagueMatch) -> [String: Any] {
+        let data: [String: Any] = [
+            "id": leagueMatch.id,
+            "leagueId": leagueMatch.league.id,
+            "round": leagueMatch.round,
+            "matchNumber": leagueMatch.matchNumber,
+            "status": leagueMatch.status.rawValue,
+            "scheduledDate": leagueMatch.scheduledDate != nil ? Timestamp(date: leagueMatch.scheduledDate!) : NSNull(),
+            "completedDate": leagueMatch.completedDate != nil ? Timestamp(date: leagueMatch.completedDate!) : NSNull(),
+            
+            // Encode the underlying match
+            "match": [
+                "id": leagueMatch.match.id,
+                "player1Id": leagueMatch.match.player1.id.uuidString,
+                "player1Name": leagueMatch.match.player1.displayName,
+                "player1Score": leagueMatch.match.player1Score,
+                "player2Id": leagueMatch.match.player2.id.uuidString,
+                "player2Name": leagueMatch.match.player2.displayName,
+                "player2Score": leagueMatch.match.player2Score,
+                "winnerId": leagueMatch.match.winner?.id.uuidString as Any,
+                "eloChange": leagueMatch.match.eloChange,
+                "date": Timestamp(date: leagueMatch.match.date),
+                "duration": leagueMatch.match.duration,
+                "location": leagueMatch.match.location,
+                "notes": leagueMatch.match.notes as Any,
+                "matchStatus": leagueMatch.match.status.rawValue,
+                "type": leagueMatch.match.type.rawValue
+            ]
+        ]
+        
+        return data
+    }
+    
+    /// Decodes Firestore data to a LeagueMatch object
+    private func decodeLeagueMatch(from data: [String: Any], id: String) throws -> LeagueMatch {
+        guard let leagueId = data["leagueId"] as? String,
+              let round = data["round"] as? Int,
+              let matchNumber = data["matchNumber"] as? Int,
+              let statusString = data["status"] as? String,
+              let status = LeagueMatch.MatchStatus(rawValue: statusString),
+              let matchData = data["match"] as? [String: Any] else {
+            throw FirebaseError.decoding
+        }
+        
+        // Create a minimal league object (we'll need to fetch the full league separately if needed)
+        let league = PickleLeague(
+            id: leagueId,
+            name: "League", // Placeholder - this would be populated from a separate call
+            leagueDescription: "",
+            location: "",
+            startDate: Date(),
+            endDate: Date()
+        )
+        
+        // Decode the match
+        guard let matchId = matchData["id"] as? String,
+              let player1IdString = matchData["player1Id"] as? String,
+              let player1Id = UUID(uuidString: player1IdString),
+              let player1Name = matchData["player1Name"] as? String,
+              let player1Score = matchData["player1Score"] as? Int,
+              let player2IdString = matchData["player2Id"] as? String,
+              let player2Id = UUID(uuidString: player2IdString),
+              let player2Name = matchData["player2Name"] as? String,
+              let player2Score = matchData["player2Score"] as? Int,
+              let eloChange = matchData["eloChange"] as? String,
+              let date = (matchData["date"] as? Timestamp)?.dateValue(),
+              let duration = matchData["duration"] as? TimeInterval,
+              let location = matchData["location"] as? String,
+              let matchStatusString = matchData["matchStatus"] as? String,
+              let matchStatus = MatchStatus(rawValue: matchStatusString),
+              let typeString = matchData["type"] as? String,
+              let type = MatchType(rawValue: typeString) else {
+            throw FirebaseError.decoding
+        }
+        
+        // Create placeholder users (in a real app, you'd fetch full user data)
+        let player1 = User(
+            id: player1Id,
+            email: "placeholder@example.com",
+            password: "",
+            displayName: player1Name
+        )
+        
+        let player2 = User(
+            id: player2Id,
+            email: "placeholder@example.com",
+            password: "",
+            displayName: player2Name
+        )
+        
+        var winner: User? = nil
+        if let winnerIdString = matchData["winnerId"] as? String,
+           let winnerId = UUID(uuidString: winnerIdString) {
+            winner = winnerId == player1Id ? player1 : player2
+        }
+        
+        let match = Match(
+            id: matchId,
+            player1: player1,
+            player2: player2,
+            player1Score: player1Score,
+            player2Score: player2Score,
+            winner: winner,
+            eloChange: eloChange,
+            date: date,
+            duration: duration,
+            location: location,
+            notes: matchData["notes"] as? String,
+            status: matchStatus,
+            type: type
+        )
+        
+        let scheduledDate = (data["scheduledDate"] as? Timestamp)?.dateValue()
+        let completedDate = (data["completedDate"] as? Timestamp)?.dateValue()
+        
+        return LeagueMatch(
+            id: id,
+            league: league,
+            match: match,
+            round: round,
+            matchNumber: matchNumber,
+            status: status,
+            scheduledDate: scheduledDate,
+            completedDate: completedDate
+        )
+    }
+} 
+
+// MARK: - Spectator Methods
+
+extension FirebaseService {
+    
+    /// Sends a spectator reaction to a match
+    func sendSpectatorReaction(matchId: String, userId: String, reaction: String) async throws {
+        let reactionData: [String: Any] = [
+            "id": UUID().uuidString,
+            "userId": userId,
+            "matchId": matchId,
+            "reaction": reaction,
+            "timestamp": Timestamp(date: Date())
+        ]
+        
+        try await perform {
+            try await db.collection("matches").document(matchId).collection("reactions").addDocument(data: reactionData)
+        }
+        
+        print("✅ Spectator reaction sent: \(reaction) for match \(matchId)")
+    }
+    
+    /// Gets spectator reactions for a match
+    func getSpectatorReactions(matchId: String) async throws -> [SpectatorReaction] {
+        let snapshot = try await perform {
+            try await db.collection("matches").document(matchId).collection("reactions")
+                .order(by: "timestamp", descending: true)
+                .getDocuments()
+        }
+        
+        var reactions: [SpectatorReaction] = []
+        for doc in snapshot.documents {
+            if let reaction = decodeSpectatorReaction(from: doc.data()) {
+                reactions.append(reaction)
+            }
+        }
+        
+        return reactions
+    }
+    
+    /// Observes spectator reactions for a match in real-time
+    func observeSpectatorReactions(matchId: String, onChange: @escaping ([SpectatorReaction]) -> Void) -> ListenerHandle {
+        let listener = db.collection("matches").document(matchId).collection("reactions")
+            .order(by: "timestamp", descending: true)
+            .addSnapshotListener { snapshot, error in
+                if let error = error {
+                    print("❌ Error observing spectator reactions: \(error)")
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    onChange([])
+                    return
+                }
+                
+                var reactions: [SpectatorReaction] = []
+                for doc in documents {
+                    if let reaction = self.decodeSpectatorReaction(from: doc.data()) {
+                        reactions.append(reaction)
+                    }
+                }
+                
+                onChange(reactions)
+            }
+        
+        return ListenerHandle { listener.remove() }
+    }
+    
+    /// Decodes spectator reaction from Firestore data
+    private func decodeSpectatorReaction(from data: [String: Any]) -> SpectatorReaction? {
+        guard let id = data["id"] as? String,
+              let userId = data["userId"] as? String,
+              let matchId = data["matchId"] as? String,
+              let reaction = data["reaction"] as? String,
+              let timestamp = (data["timestamp"] as? Timestamp)?.dateValue() else {
+            return nil
+        }
+        
+        return SpectatorReaction(
+            id: id,
+            userId: userId,
+            matchId: matchId,
+            reaction: reaction,
+            timestamp: timestamp,
+            position: nil
+        )
+    }
+    
+    /// Observes a match for real-time updates
+    func observeMatch(id: String, onChange: @escaping (Result<TournamentMatch, Error>) -> Void) -> ListenerHandle {
+        let listener = db.collection("tournaments").whereField("matches", arrayContains: ["id": id])
+            .addSnapshotListener { snapshot, error in
+                if let error = error {
+                    onChange(.failure(error))
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    onChange(.failure(FirebaseError.unknown))
+                    return
+                }
+                
+                // Find the tournament containing this match
+                for document in documents {
+                    do {
+                        let tournament = try self.decodeTournament(from: document.data(), id: document.documentID)
+                        if let match = tournament.matches.first(where: { $0.id.uuidString == id }) {
+                            onChange(.success(match))
+                            return
+                        }
+                    } catch {
+                        onChange(.failure(error))
+                        return
+                    }
+                }
+                
+                onChange(.failure(FirebaseError.unknown))
+            }
+        
+        return ListenerHandle { listener.remove() }
+    }
+    
+    /// Observes spectators for a match in real-time
+    func observeSpectators(matchId: String, onChange: @escaping ([SpectatorUser]) -> Void) -> ListenerHandle {
+        let listener = db.collection("matches").document(matchId).collection("spectators")
+            .addSnapshotListener { snapshot, error in
+                if let error = error {
+                    print("❌ Error observing spectators: \(error)")
+                    onChange([])
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    onChange([])
+                    return
+                }
+                
+                var spectators: [SpectatorUser] = []
+                for doc in documents {
+                    if let spectator = self.decodeSpectatorUser(from: doc.data()) {
+                        spectators.append(spectator)
+                    }
+                }
+                
+                onChange(spectators)
+            }
+        
+        return ListenerHandle { listener.remove() }
+    }
+    
+    /// Decodes spectator user from Firestore data
+    private func decodeSpectatorUser(from data: [String: Any]) -> SpectatorUser? {
+        guard let userId = data["userId"] as? String,
+              let displayName = data["displayName"] as? String,
+              let joinedAt = (data["joinedAt"] as? Timestamp)?.dateValue() else {
+            return nil
+        }
+        
+        return SpectatorUser(
+            userId: userId,
+            displayName: displayName,
+            profileImageURL: data["profileImageURL"] as? String,
+            joinedAt: joinedAt,
+            isActive: data["isActive"] as? Bool ?? true
+        )
+    }
+}

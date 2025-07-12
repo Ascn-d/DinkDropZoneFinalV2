@@ -3,8 +3,7 @@ import SwiftData
 
 struct TournamentBracketView: View {
     @State private var tournament: Tournament
-
-    @StateObject private var tournamentService = TournamentService(firebaseService: FirebaseService.shared)
+    @EnvironmentObject private var appState: AppState
     @State private var selectedMatch: TournamentMatch? = nil
     @State private var showMatchDetails = false
     @State private var animateProgress = false
@@ -12,8 +11,8 @@ struct TournamentBracketView: View {
     @State private var isLoading = true
     @State private var lastUpdateTime = Date()
     
-    // Real-time update timer
-    @State private var updateTimer: Timer?
+    // Real-time Firebase listener handle
+    @State private var tournamentListener: FirebaseService.ListenerHandle?
     @State private var showingInteractiveBracket = false
     @State private var showingAdvancedBracket = false
     
@@ -871,43 +870,27 @@ struct TournamentBracketView: View {
     }
     
     private func startLiveUpdates() {
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
-            Task {
-                await refreshTournamentData()
+        tournamentListener = appState.firebaseService.observeTournament(id: tournament.id.uuidString) { result in
+            switch result {
+            case .success(let updatedTournament):
+                Task {
+                    await MainActor.run {
+                        tournament = updatedTournament
+                        lastUpdateTime = Date()
+                        
+                        // Haptic feedback for updates
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                }
+            case .failure(let error):
+                print("❌ Tournament listener error: \(error)")
             }
         }
     }
     
     private func stopLiveUpdates() {
-        updateTimer?.invalidate()
-        updateTimer = nil
-    }
-    
-    private func refreshTournamentData() async {
-        do {
-            let updatedTournament = try await tournamentService.getTournament(id: tournament.id.uuidString)
-            
-            await MainActor.run {
-                // Check if there are any changes
-                let hasChanges = tournament.matches.count != updatedTournament.matches.count ||
-                    tournament.matches.contains { oldMatch in
-                        guard let newMatch = updatedTournament.matches.first(where: { $0.id == oldMatch.id }) else { return true }
-                        return oldMatch.status != newMatch.status || oldMatch.finalScore != newMatch.finalScore
-                    }
-                
-                if hasChanges {
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                        tournament = updatedTournament
-                        lastUpdateTime = Date()
-                    }
-                    
-                    // Haptic feedback for updates
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                }
-            }
-        } catch {
-            print("Failed to refresh tournament data: \(error)")
-        }
+        tournamentListener?.remove()
+        tournamentListener = nil
     }
 }
 

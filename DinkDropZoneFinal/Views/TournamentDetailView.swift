@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import FirebaseAuth
 
 // MARK: - Notification Names
 
@@ -10,625 +11,800 @@ extension Notification.Name {
 
 struct TournamentDetailView: View {
     let tournament: Tournament
-    let tournamentService: TournamentService?
     
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
-    @State private var userStatus: UserTournamentStatus = .notRegistered
+    @State private var isLoading = false
+    @State private var errorMessage: String?
     @State private var showBracket = false
     @State private var showMatchView = false
     @State private var currentMatch: TournamentMatch?
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var refreshTimer: Timer?
+    @State private var showTournamentJoin = false
+    @State private var animateContent = false
+    @State private var showCelebration = false
+    @State private var parallaxOffset: CGFloat = 0
+    @State private var showingOrganizerDashboard = false
+    
+    // Use centralized tournament status from AppState
+    private var userStatus: AppState.UserTournamentStatus {
+        return appState.getUserTournamentStatus(for: tournament)
+    }
+    
+    // Check if current user is the tournament organizer
+    private var isUserTournamentOrganizer: Bool {
+        guard let currentUser = appState.currentUser else { return false }
+        // Use Firebase user ID for organizer comparison
+        guard let firebaseUser = Auth.auth().currentUser else { return false }
+        return tournament.organizerID == firebaseUser.uid
+    }
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Tournament Header
-                    tournamentHeader
-                    
-                    // User Status Section
-                    userStatusSection
-                    
-                    // Action Buttons
-                    actionButtons
-                    
-                    // Tournament Info
-                    tournamentInfo
-                    
-                    // Participants Section
-                    participantsSection
-                    
-                    // Ready Matches Section
-                    if tournament.status == "In Progress" {
-                        readyMatchesSection
+            ZStack {
+                // Enhanced background with parallax effect
+                DS.Color.backgroundGradient
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Enhanced Tournament Header with parallax
+                        enhancedTournamentHeader
+                            .offset(y: parallaxOffset * 0.5)
+                        
+                        // Main Content
+                        VStack(spacing: 24) {
+                            // Enhanced Status and Actions
+                            enhancedStatusSection
+                            
+                            // Enhanced Tournament Information
+                            enhancedTournamentInfo
+                            
+                            // Current Match (if user is participating and has active match)
+                            if userStatus == .participating, let activeMatch = getUserActiveMatch() {
+                                enhancedCurrentMatchSection(activeMatch)
+                            }
+                            
+                            // Enhanced Tournament Progress
+                            if userStatus == .participating || userStatus == .completed {
+                                enhancedTournamentProgress
+                            }
+                            
+                            // Enhanced Bracket Preview
+                            enhancedBracketPreview
+                            
+                            // Enhanced Participants Preview
+                            enhancedParticipantsPreview
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(DS.Color.surface)
+                                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
+                        )
+                        .offset(y: -20)
                     }
                 }
-                .padding()
-            }
-            .navigationTitle(tournament.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") {
-                        dismiss()
-                    }
+                .scrollDisabled(false)
+                .coordinateSpace(name: "scroll")
+                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                    parallaxOffset = value
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Bracket") {
-                        showBracket = true
+                // Floating action button
+                if userStatus == .participating, let activeMatch = getUserActiveMatch() {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button {
+                                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                                impactFeedback.impactOccurred()
+                                currentMatch = activeMatch
+                                showMatchView = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "play.fill")
+                                        .font(.title3)
+                                    Text("Play Match")
+                                        .font(DS.Font.button)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 16)
+                                .background(TournamentDS.Color.live)
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+                            }
+                            .scaleEffect(animateContent ? 1.0 : 0.8)
+                            .animation(TournamentDS.Animation.victory.delay(1.0), value: animateContent)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 100)
                     }
-                    .disabled(tournament.matches.isEmpty)
+                }
+            }
+            .navigationBarHidden(true)
+            .onAppear {
+                withAnimation(TournamentDS.Animation.tournamentEntry) {
+                    animateContent = true
                 }
             }
             .sheet(isPresented: $showBracket) {
-                TournamentBracketView(tournament: tournament)
+                InteractiveTournamentBracketView(tournament: tournament)
+                    .environmentObject(appState)
             }
             .sheet(isPresented: $showMatchView) {
                 if let match = currentMatch {
-                    TournamentMatchView(match: match, tournament: tournament, tournamentService: tournamentService)
+                    ScoreEntryView(
+                        match: match,
+                        tournament: tournament
+                    )
+                    .environmentObject(appState)
                 }
             }
-            .onAppear {
-                updateUserStatus()
-                startRefreshTimer()
+            .sheet(isPresented: $showTournamentJoin) {
+                TournamentJoinView(tournament: tournament, tournamentService: appState.getTournamentService()!)
+                    .environmentObject(appState)
+                    .onDisappear {
+                        LoggingService.shared.log("Tournament join view dismissed")
+                    }
             }
-            .onDisappear {
-                stopRefreshTimer()
+            .sheet(isPresented: $showingOrganizerDashboard) {
+                TournamentOrganizerDashboard(tournament: tournament)
+                    .environmentObject(appState)
             }
             .onReceive(NotificationCenter.default.publisher(for: .tournamentUpdated)) { notification in
                 if let updatedTournament = notification.object as? Tournament,
                    updatedTournament.id == tournament.id {
-                    updateUserStatus()
+                    LoggingService.shared.log("Tournament updated via notification")
+                    
+                    // Trigger update animation
+                    withAnimation(TournamentDS.Animation.matchUpdate) {
+                        // Visual feedback for updates
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .bracketUpdated)) { notification in
                 if let updatedTournament = notification.object as? Tournament,
                    updatedTournament.id == tournament.id {
-                    updateUserStatus()
+                    LoggingService.shared.log("Tournament bracket updated")
                 }
             }
-        }
-    }
-    
-    // MARK: - Tournament Header
-    
-    private var tournamentHeader: some View {
-        VStack(spacing: 16) {
-            Text(tournament.name)
-                .font(.title)
-                .fontWeight(.bold)
-                .multilineTextAlignment(.center)
-            
-            HStack {
-                statusBadge
-                Spacer()
-                Text(tournament.startDate.formatted(date: .abbreviated, time: .shortened))
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            
-            if !tournament.description.isEmpty {
-                Text(tournament.description)
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
-    }
-    
-    private var statusBadge: some View {
-        Text(tournament.status)
-            .font(.caption)
-            .fontWeight(.medium)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(statusColor.opacity(0.2))
-            )
-            .foregroundColor(statusColor)
-    }
-    
-    private var statusColor: Color {
-        switch tournament.status {
-        case "Upcoming": return .blue
-        case "Registration Open": return .green
-        case "Registration Closed": return .orange
-        case "In Progress": return .purple
-        case "Completed": return .gray
-        case "Cancelled": return .red
-        default: return .gray
-        }
-    }
-    
-    // MARK: - User Status Section
-    
-    private var userStatusSection: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: statusIcon)
-                    .font(.title2)
-                    .foregroundColor(userStatusColor)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Your Status")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text(userStatus.description)
-                        .font(.headline)
-                        .foregroundColor(userStatusColor)
+            .alert("Error", isPresented: .constant(errorMessage != nil)) {
+                Button("OK") {
+                    errorMessage = nil
                 }
-                
-                Spacer()
+            } message: {
+                Text(errorMessage ?? "")
             }
+            .particleEffect(.victory, isActive: showCelebration)
+        }
+    }
+    
+    // MARK: - Enhanced Tournament Header
+    
+    private var enhancedTournamentHeader: some View {
+        ZStack {
+            // Background with enhanced gradient
+            RoundedRectangle(cornerRadius: 0)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            .blue.opacity(0.8),
+                            .blue.opacity(0.6),
+                            .blue.opacity(0.4)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(height: 320)
+                .overlay(
+                    // Subtle pattern overlay
+                    Image(systemName: "triangle.fill")
+                        .font(.system(size: 200))
+                        .foregroundColor(.white.opacity(0.1))
+                        .offset(x: 100, y: -50)
+                        .rotationEffect(.degrees(15))
+                )
             
-            // Show match ready notification
-            if case .hasMatch(let match) = userStatus {
-                VStack(spacing: 8) {
-                    Text("Your match is ready!")
-                        .font(.headline)
-                        .foregroundColor(.green)
-                    
-                    Text("vs \(getOpponentName(match: match))")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    Button("Play Match") {
-                        currentMatch = match
-                        showMatchView = true
+            VStack(spacing: 20) {
+                // Back button
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .padding(12)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    
+                    Spacer()
+                    
+                    // Status indicator
+                    enhancedStatusIndicator
                 }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.green.opacity(0.1))
+                .padding(.horizontal, 20)
+                .padding(.top, 60)
+                
+                // Tournament icon with enhanced effects
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 100, height: 100)
+                        .scaleEffect(animateContent ? 1.0 : 0.8)
+                        .animation(TournamentDS.Animation.tournamentEntry.delay(0.3), value: animateContent)
+                    
+                    Image(systemName: tournamentIcon)
+                        .font(.system(size: 40))
+                        .foregroundColor(.white)
+                        .symbolEffect(.bounce, value: animateContent)
+                        .offset(y: animateContent ? 0 : 10)
+                        .animation(TournamentDS.Animation.tournamentEntry.delay(0.5), value: animateContent)
+                }
+                
+                // Tournament name and description
+                VStack(spacing: 8) {
+                    Text(tournament.name)
+                        .font(DS.Font.displayLarge)
+                        .fontWeight(.black)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .offset(y: animateContent ? 0 : 20)
+                        .opacity(animateContent ? 1.0 : 0.0)
+                        .animation(TournamentDS.Animation.tournamentEntry.delay(0.7), value: animateContent)
+                    
+                    if !tournament.description.isEmpty {
+                        Text(tournament.description)
+                            .font(DS.Font.body)
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                            .offset(y: animateContent ? 0 : 20)
+                            .opacity(animateContent ? 1.0 : 0.0)
+                            .animation(TournamentDS.Animation.tournamentEntry.delay(0.9), value: animateContent)
+                    }
+                }
+                
+                Spacer()
+            }
+        }
+    }
+    
+    // MARK: - Enhanced Status Section
+    
+    private var enhancedStatusSection: some View {
+        VStack(spacing: 16) {
+            // Status badges with enhanced styling
+            HStack(spacing: 12) {
+                EnhancedStatusBadge(
+                    status: tournament.status
+                )
+                
+                Spacer()
+                
+                EnhancedStatusBadge(
+                    status: userStatus.displayText
                 )
             }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
-    }
-    
-    private var statusIcon: String {
-        switch userStatus {
-        case .notRegistered:
-            return "person.badge.plus"
-        case .registered:
-            return "checkmark.circle"
-        case .waitingForMatch:
-            return "clock"
-        case .hasMatch:
-            return "gamecontroller"
-        case .eliminated:
-            return "xmark.circle"
-        case .finished:
-            return "trophy"
-        case .active:
-            return "play.circle"
-        case .champion:
-            return "crown.fill"
-        case .runnerUp:
-            return "medal.fill"
-        case .thirdPlace:
-            return "medal"
-        }
-    }
-    
-    private var userStatusColor: Color {
-        switch userStatus {
-        case .notRegistered:
-            return .blue
-        case .registered:
-            return .green
-        case .waitingForMatch:
-            return .orange
-        case .hasMatch:
-            return .purple
-        case .eliminated:
-            return .red
-        case .finished:
-            return .gray
-        case .active:
-            return .green
-        case .champion:
-            return .yellow
-        case .runnerUp:
-            return .gray
-        case .thirdPlace:
-            return .orange
-        }
-    }
-    
-    // MARK: - Action Buttons
-    
-    private var actionButtons: some View {
-        VStack(spacing: 12) {
-            // Organizer controls (if user is the organizer)
-            if isOrganizer {
-                organizerControls
-            }
             
-            // Regular participant controls
-            switch userStatus {
-            case .notRegistered:
-                if tournament.isRegistrationOpen {
-                    Button("Join Tournament") {
-                        joinTournament()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(isLoading)
-                } else {
-                    Text("Registration Closed")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                }
-                
-            case .registered:
-                if tournament.status == "Registration Open" {
-                    Button("Leave Tournament") {
-                        leaveTournament()
-                    }
-                    .buttonStyle(.bordered)
-                    .foregroundColor(.red)
-                    .disabled(isLoading)
-                }
-                
-            case .waitingForMatch:
-                VStack(spacing: 8) {
-                    Text("Waiting for next opponent...")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                    
-                    ProgressView()
-                        .scaleEffect(1.2)
-                }
-                .padding()
-                
-            case .hasMatch(let match):
-                Button("View Match Details") {
-                    currentMatch = match
-                    showMatchView = true
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                
-            case .eliminated(let placement):
-                VStack(spacing: 8) {
-                    Text("Tournament Complete")
-                        .font(.headline)
-                    
-                    Text("Final Placement: \(placement.ordinal)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                
-            case .finished(let placement):
-                VStack(spacing: 8) {
-                    if placement == 1 {
-                        Text("🏆 Champion! 🏆")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                    } else {
-                        Text("Tournament Complete")
-                            .font(.headline)
-                    }
-                    
-                    Text("Final Placement: \(placement.ordinal)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                
-            case .active:
-                VStack(spacing: 8) {
-                    Text("Tournament in Progress")
-                        .font(.headline)
-                        .foregroundColor(.green)
-                    
-                    Text("Waiting for your next match...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                
-            case .champion:
-                VStack(spacing: 8) {
-                    Text("🏆 CHAMPION! 🏆")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.yellow)
-                    
-                    Text("Congratulations on winning the tournament!")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-                
-            case .runnerUp:
-                VStack(spacing: 8) {
-                    Text("🥈 Runner-up")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.gray)
-                    
-                    Text("Great performance! You finished in 2nd place.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-                
-            case .thirdPlace:
-                VStack(spacing: 8) {
-                    Text("🥉 Third Place")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.orange)
-                    
-                    Text("Excellent job! You finished in 3rd place.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-            }
-            
-            if let error = errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(.top, 8)
-            }
+            // Enhanced action buttons
+            enhancedActionButtons
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        .scaleEffect(animateContent ? 1.0 : 0.95)
+        .opacity(animateContent ? 1.0 : 0.0)
+        .animation(TournamentDS.Animation.tournamentEntry.delay(1.1), value: animateContent)
     }
     
-    // MARK: - Organizer Controls
+    // MARK: - Enhanced Tournament Info
     
-    private var organizerControls: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "crown.fill")
-                    .foregroundColor(.yellow)
-                Text("Tournament Organizer")
-                    .font(.headline)
-                    .fontWeight(.bold)
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.yellow.opacity(0.1))
-            )
-            
-            if tournament.status == "Registration Open" || tournament.status == "Registration Closed" {
-                Button("Start Tournament") {
-                    startTournament()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(isLoading || tournament.participants.count < 4)
-                
-                if tournament.participants.count < 4 {
-                    Text("Need at least 4 participants to start")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-    }
-    
-    private var isOrganizer: Bool {
-        guard let currentUser = appState.currentUser else { return false }
-        return tournament.organizerID == currentUser.id.uuidString
-    }
-    
-    // MARK: - Tournament Info
-    
-    private var tournamentInfo: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private var enhancedTournamentInfo: some View {
+        VStack(alignment: .leading, spacing: 20) {
             Text("Tournament Details")
-                .font(.headline)
+                .font(DS.Font.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
             
+            // Enhanced info cards with animation
             LazyVGrid(columns: [
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 16) {
-                infoItem(title: "Format", value: tournament.format)
-                infoItem(title: "Skill Level", value: tournament.skillLevel)
-                infoItem(title: "Max Players", value: "\(tournament.maxParticipants)")
-                infoItem(title: "Registered", value: "\(tournament.registeredCount)")
+                EnhancedInfoCard(
+                    title: "Format",
+                    value: tournament.format,
+                    icon: "gamecontroller.fill",
+                    gradient: TournamentDS.Color.active,
+                    delay: 0.0
+                )
+                
+                EnhancedInfoCard(
+                    title: "Participants",
+                    value: "\(tournament.registeredCount)/\(tournament.maxParticipants)",
+                    icon: "person.2.fill",
+                    gradient: TournamentDS.Color.upcoming,
+                    delay: 0.1
+                )
+                
+                EnhancedInfoCard(
+                    title: "Prize Pool",
+                    value: "$\(tournament.prizePool)",
+                    icon: "dollarsign.circle.fill",
+                    gradient: TournamentDS.Color.winner,
+                    delay: 0.2
+                )
+                
+                EnhancedInfoCard(
+                    title: "Entry Fee",
+                    value: "$\(tournament.entryFee)",
+                    icon: "creditcard.fill",
+                    gradient: TournamentDS.Color.registration,
+                    delay: 0.3
+                )
             }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
-    }
-    
-    private func infoItem(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
             
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.medium)
+            // Enhanced venue and schedule
+            enhancedVenueSchedule
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(DS.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
     
-    // MARK: - Participants Section
+    // MARK: - Enhanced Current Match Section
     
-    private var participantsSection: some View {
+    private func enhancedCurrentMatchSection(_ match: TournamentMatch) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Participants")
-                    .font(.headline)
+                Text("Your Current Match")
+                    .font(DS.Font.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
                 
                 Spacer()
                 
-                Text("\(tournament.registeredCount)/\(tournament.maxParticipants)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Live indicator
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(animateContent ? 1.2 : 1.0)
+                        .animation(TournamentDS.Animation.pulse, value: animateContent)
+                    
+                    Text("LIVE")
+                        .font(DS.Font.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.red)
+                }
             }
             
+            EnhancedMatchCard(match: match) {
+                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                impactFeedback.impactOccurred()
+                currentMatch = match
+                showMatchView = true
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(DS.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Layout.cornerRadius)
+                .stroke(TournamentDS.Color.live, lineWidth: 2)
+        )
+        .shadow(color: .red.opacity(0.2), radius: 8, x: 0, y: 4)
+    }
+    
+    // MARK: - Enhanced Tournament Progress
+    
+    private var enhancedTournamentProgress: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Tournament Progress")
+                    .font(DS.Font.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("\(Int(getTournamentProgress() * 100))%")
+                    .font(DS.Font.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+            }
+            
+            // Enhanced progress bar
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(DS.Color.divider.opacity(0.3))
+                        .frame(height: 8)
+                        .cornerRadius(4)
+                    
+                    Rectangle()
+                        .fill(TournamentDS.Color.active)
+                        .frame(width: geometry.size.width * getTournamentProgress(), height: 8)
+                        .cornerRadius(4)
+                        .animation(TournamentDS.Animation.tournamentEntry.delay(1.5), value: animateContent)
+                }
+            }
+            .frame(height: 8)
+            
+            HStack {
+                Text("\(getCompletedMatches()) of \(tournament.matches.count) matches completed")
+                    .font(DS.Font.body)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text(progressStatusText)
+                    .font(DS.Font.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(DS.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+    
+    // MARK: - Enhanced Bracket Preview
+    
+    private var enhancedBracketPreview: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Tournament Bracket")
+                    .font(DS.Font.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Button("View Full Bracket") {
+                    showBracket = true
+                }
+                .tournamentButton(gradient: TournamentDS.Color.upcoming)
+            }
+            
+            // Enhanced bracket preview
+            bracketPreviewContent
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(DS.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+    
+    // MARK: - Enhanced Participants Preview
+    
+    private var enhancedParticipantsPreview: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Participants (\(tournament.registeredCount))")
+                    .font(DS.Font.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Button("View All") {
+                    // Navigate to participants view
+                }
+                .tournamentButton(gradient: TournamentDS.Color.upcoming)
+            }
+            
+            // Enhanced participants grid
             LazyVGrid(columns: [
+                GridItem(.flexible()),
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 12) {
-                ForEach(tournament.participants.prefix(8), id: \.id) { participant in
-                    participantCard(participant)
-                }
-                
-                if tournament.registeredCount > 8 {
-                    Text("+ \(tournament.registeredCount - 8) more")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                ForEach(Array(tournament.participants.prefix(9).enumerated()), id: \.offset) { index, participant in
+                    EnhancedParticipantCard(
+                        participant: participant.displayName,
+                        delay: Double(index) * 0.1
+                    )
                 }
             }
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(DS.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.cornerRadius))
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
     
-    private func participantCard(_ participant: TournamentParticipant) -> some View {
-        VStack(spacing: 4) {
-            Text(participant.effectiveName)
-                .font(.caption)
-                .fontWeight(.medium)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-            
-            Text("ELO: \(participant.elo)")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.regularMaterial)
-        )
-    }
+    // MARK: - Helper Components
     
-    // MARK: - Ready Matches Section
-    
-    private var readyMatchesSection: some View {
-        let readyMatches = tournamentService?.getReadyMatches(in: tournament) ?? []
-        
-        return VStack(alignment: .leading, spacing: 16) {
-            Text("Current Matches")
-                .font(.headline)
-            
-            if readyMatches.isEmpty {
-                Text("No matches ready")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-            } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(readyMatches, id: \.id) { match in
-                        readyMatchCard(match)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
-    }
-    
-    private func readyMatchCard(_ match: TournamentMatch) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(match.displayName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text(match.shortDescription)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-            }
-            
-            Spacer()
-            
+    private var enhancedStatusIndicator: some View {
+        HStack(spacing: 8) {
             Circle()
-                .fill(.green)
+                .fill(statusColor)
                 .frame(width: 8, height: 8)
+                .scaleEffect(animateContent ? 1.2 : 1.0)
+                .animation(TournamentDS.Animation.pulse, value: animateContent)
+            
+            Text(tournament.status.uppercased())
+                .font(DS.Font.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.green.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(.green.opacity(0.3), lineWidth: 1)
-                )
-        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+    }
+    
+    private var enhancedActionButtons: some View {
+        VStack(spacing: 12) {
+            // Tournament Organizer Dashboard Button
+            if isUserTournamentOrganizer {
+                Button("Tournament Dashboard") {
+                    showingOrganizerDashboard = true
+                }
+                .tournamentButton(gradient: TournamentDS.Color.live, isDisabled: isLoading)
+                .disabled(isLoading)
+            }
+            
+            // Regular participant action buttons
+            HStack(spacing: 12) {
+                switch userStatus {
+                case .notRegistered:
+                    if tournament.status == "Registration Open" {
+                        Button("Join Tournament") {
+                            joinTournament()
+                        }
+                        .tournamentButton(gradient: TournamentDS.Color.registration, isDisabled: isLoading)
+                        .disabled(isLoading)
+                    }
+                    
+                case .registered, .waitingToStart:
+                    Button("Leave Tournament") {
+                        leaveTournament()
+                    }
+                    .tournamentButton(gradient: TournamentDS.Color.completed, isDisabled: isLoading)
+                    .disabled(isLoading)
+                    
+                case .participating:
+                    Button("View Bracket") {
+                        showBracket = true
+                    }
+                    .tournamentButton(gradient: TournamentDS.Color.upcoming)
+                    
+                case .completed, .eliminated:
+                    Button("View Results") {
+                        showBracket = true
+                    }
+                    .tournamentButton(gradient: TournamentDS.Color.completed)
+                }
+                
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white)
+                }
+            }
+        }
+    }
+    
+    private var enhancedVenueSchedule: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "location.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(TournamentDS.Color.upcoming)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Venue")
+                        .font(DS.Font.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text(tournament.venueName.isEmpty ? "Venue TBD" : tournament.venueName)
+                        .font(DS.Font.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+            }
+            
+            HStack(spacing: 12) {
+                Image(systemName: "calendar.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(TournamentDS.Color.active)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Start Date")
+                        .font(DS.Font.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text(tournament.startDate.formatted(date: .abbreviated, time: .shortened))
+                        .font(DS.Font.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+            }
+            
+            if tournament.endDate != tournament.startDate {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.clock.fill")
+                        .font(.title3)
+                        .foregroundStyle(TournamentDS.Color.registration)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("End Date")
+                            .font(DS.Font.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text(tournament.endDate.formatted(date: .abbreviated, time: .shortened))
+                            .font(DS.Font.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(DS.Color.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.smallCornerRadius))
+    }
+    
+    private var bracketPreviewContent: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Round of \(tournament.matches.count)")
+                    .font(DS.Font.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("Next: \(nextMatchTime)")
+                    .font(DS.Font.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Simplified bracket visualization
+            HStack(spacing: 8) {
+                ForEach(0..<4) { index in
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(index < 2 ? AnyShapeStyle(TournamentDS.Color.finished) : AnyShapeStyle(DS.Color.divider.opacity(0.3)))
+                        .frame(height: 8)
+                        .animation(TournamentDS.Animation.tournamentEntry.delay(Double(index) * 0.1), value: animateContent)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(DS.Color.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.smallCornerRadius))
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var statusColor: Color {
+        switch tournament.status {
+        case "Registration Open": return .green
+        case "Registration Closed": return .orange
+        case "In Progress", "Live": return .red
+        case "Completed": return .gray
+        default: return .gray
+        }
+    }
+    
+    private var statusGradient: LinearGradient {
+        switch tournament.status {
+        case "Registration Open": return TournamentDS.Color.registration
+        case "Registration Closed": return TournamentDS.Color.upcoming
+        case "In Progress", "Live": return TournamentDS.Color.live
+        case "Completed": return TournamentDS.Color.completed
+        default: return TournamentDS.Color.upcoming
+        }
+    }
+    
+    private var statusIcon: String {
+        switch tournament.status {
+        case "Registration Open": return "person.badge.plus"
+        case "Registration Closed": return "person.badge.minus"
+        case "In Progress", "Live": return "play.circle.fill"
+        case "Completed": return "checkmark.circle.fill"
+        default: return "circle"
+        }
+    }
+    
+    private var userStatusGradient: LinearGradient {
+        switch userStatus {
+        case .notRegistered: return TournamentDS.Color.upcoming
+        case .registered, .waitingToStart: return TournamentDS.Color.registration
+        case .participating: return TournamentDS.Color.live
+        case .completed: return TournamentDS.Color.winner
+        case .eliminated: return TournamentDS.Color.completed
+        }
+    }
+    
+    private var userStatusIcon: String {
+        switch userStatus {
+        case .notRegistered: return "person.circle"
+        case .registered, .waitingToStart: return "person.circle.fill"
+        case .participating: return "gamecontroller.fill"
+        case .completed: return "trophy.fill"
+        case .eliminated: return "xmark.circle.fill"
+        }
+    }
+    
+    private var tournamentIcon: String {
+        switch tournament.format {
+        case "Singles": return "person.circle.fill"
+        case "Doubles": return "person.2.circle.fill"
+        case "Mixed": return "person.3.circle.fill"
+        default: return "trophy.fill"
+        }
+    }
+    
+    private var progressStatusText: String {
+        let progress = getTournamentProgress()
+        if progress == 0 {
+            return "Not started"
+        } else if progress < 0.5 {
+            return "Early rounds"
+        } else if progress < 1.0 {
+            return "Final rounds"
+        } else {
+            return "Completed"
+        }
+    }
+    
+    private var nextMatchTime: String {
+        // Mock next match time
+        return "15:30"
     }
     
     // MARK: - Helper Methods
     
-    private func updateUserStatus() {
-        guard let user = appState.currentUser,
-              let service = tournamentService else {
-            userStatus = .notRegistered
-            return
-        }
+    private func getUserActiveMatch() -> TournamentMatch? {
+        guard let currentUser = appState.currentUser else { return nil }
+        guard let firebaseUser = Auth.auth().currentUser else { return nil }
         
-        userStatus = service.getUserTournamentStatus(user: user, tournament: tournament)
-    }
-    
-    private func getOpponentName(match: TournamentMatch) -> String {
-        guard let user = appState.currentUser else { return "Unknown" }
-        
-        let userID = user.id.uuidString
-        if match.player1ID == userID {
-            return match.player2Name.isEmpty ? "TBD" : match.player2Name
-        } else {
-            return match.player1Name.isEmpty ? "TBD" : match.player1Name
+        return tournament.matches.first { match in
+            match.status == "Ready" &&
+            (match.player1ID == firebaseUser.uid || match.player2ID == firebaseUser.uid)
         }
     }
     
     private func joinTournament() {
-        guard let user = appState.currentUser,
-              let service = tournamentService else { return }
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
         
         isLoading = true
         errorMessage = nil
         
         Task {
             do {
-                try await service.joinTournament(tournament, user: user)
+                try await appState.joinTournament(tournament)
                 await MainActor.run {
-                    updateUserStatus()
                     isLoading = false
+                    withAnimation(TournamentDS.Animation.victory) {
+                        showCelebration = true
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -640,17 +816,16 @@ struct TournamentDetailView: View {
     }
     
     private func leaveTournament() {
-        guard let user = appState.currentUser,
-              let service = tournamentService else { return }
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
         
         isLoading = true
         errorMessage = nil
         
         Task {
             do {
-                try await service.leaveTournament(tournament, user: user)
+                try await appState.leaveTournament(tournament)
                 await MainActor.run {
-                    updateUserStatus()
                     isLoading = false
                 }
             } catch {
@@ -662,41 +837,104 @@ struct TournamentDetailView: View {
         }
     }
     
-    private func startRefreshTimer() {
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-            updateUserStatus()
-        }
+    private func getTournamentProgress() -> Double {
+        let total = tournament.matches.count
+        let completed = getCompletedMatches()
+        return total > 0 ? Double(completed) / Double(total) : 0.0
     }
     
-    private func stopRefreshTimer() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
+    private func getCompletedMatches() -> Int {
+        return tournament.matches.filter { $0.status == "Completed" }.count
     }
+}
+
+// MARK: - Supporting Views (moved to avoid duplicates)
+
+struct EnhancedInfoCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let gradient: LinearGradient
+    let delay: Double
     
-    private func startTournament() {
-        guard let user = appState.currentUser,
-              let service = tournamentService else { return }
-        
-        isLoading = true
-        errorMessage = nil
-        
-        Task {
-            do {
-                _ = try await service.startTournamentNow(tournament, organizerID: user.id.uuidString)
-                await MainActor.run {
-                    updateUserStatus()
-                    isLoading = false
-                    
-                    // Show success feedback
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    isLoading = false
-                }
+    @State private var isAnimated = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(gradient)
+                
+                Spacer()
             }
+            
+            Text(title)
+                .font(DS.Font.caption)
+                .foregroundColor(.secondary)
+            
+            Text(value)
+                .font(DS.Font.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(DS.Color.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.smallCornerRadius))
+        .scaleEffect(isAnimated ? 1.0 : 0.9)
+        .opacity(isAnimated ? 1.0 : 0.0)
+        .animation(TournamentDS.Animation.tournamentEntry.delay(delay), value: isAnimated)
+        .onAppear {
+            isAnimated = true
+        }
+    }
+}
+
+// EnhancedMatchCard moved to avoid duplicate declarations
+
+struct EnhancedParticipantCard: View {
+    let participant: String
+    let delay: Double
+    
+    @State private var isAnimated = false
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Circle()
+                .fill(TournamentDS.Color.upcoming)
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Text(String(participant.prefix(1).uppercased()))
+                        .font(DS.Font.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                )
+            
+            Text(participant.isEmpty ? "Player" : participant)
+                .font(DS.Font.caption)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 12)
+        .background(DS.Color.surfaceAlt)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Layout.smallCornerRadius))
+        .scaleEffect(isAnimated ? 1.0 : 0.8)
+        .opacity(isAnimated ? 1.0 : 0.0)
+        .animation(TournamentDS.Animation.tournamentEntry.delay(delay), value: isAnimated)
+        .onAppear {
+            isAnimated = true
+        }
+    }
+}
+
+// MARK: - Scroll Offset Tracking
+
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -704,11 +942,10 @@ struct TournamentDetailView: View {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
     let container = try! ModelContainer(for: User.self, configurations: config)
     
-    // Create tournament with initial status
     let tournament = {
         var t = Tournament(
             name: "Summer Championship",
-            description: "Annual summer tournament",
+            description: "Annual summer tournament featuring the best players",
             organizerID: "organizer1",
             organizerName: "Tournament Director"
         )
@@ -717,9 +954,8 @@ struct TournamentDetailView: View {
     }()
     
     let appState = AppState()
-    let tournamentService = TournamentService(firebaseService: FirebaseService.shared)
     
-    return TournamentDetailView(tournament: tournament, tournamentService: tournamentService)
+    TournamentDetailView(tournament: tournament)
         .modelContainer(container)
         .environmentObject(appState)
 } 

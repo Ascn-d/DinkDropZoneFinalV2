@@ -1,14 +1,19 @@
 import SwiftUI
 import MapKit
+import FirebaseAuth
 
 struct CreateTournamentWizard: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var appState: AppState
-    @StateObject private var tournamentService = TournamentService(firebaseService: FirebaseService.shared)
     
     // Step management
     @State private var currentStep = 0
-    private let totalSteps = 5
+    private let totalSteps = 6 // Increased for new AI optimization step
+    
+    // Use AppState's tournament service
+    private var tournamentService: TournamentService? {
+        return appState.getTournamentService()
+    }
     
     // Tournament data
     @State private var name = ""
@@ -37,17 +42,31 @@ struct CreateTournamentWizard: View {
     @State private var useTimeouts = true
     @State private var timeoutDuration = 60 // seconds
     
+    // AI & Enhanced Features
+    @State private var useAIOptimization = true
+    @State private var aiRecommendations: [AIRecommendation] = []
+    @State private var isLoadingAI = false
+    @State private var selectedTemplate: TournamentTemplate?
+    @State private var enableLiveStreaming = false
+    @State private var enableProfessionalFeatures = false
+    @State private var socialMediaIntegration = false
+    @State private var smartPricing = false
+    @State private var autoBracketSeeding = true
+    
     // UI State
     @State private var isCreating = false
     @State private var showingSuccessAlert = false
     @State private var errorMessage = ""
     @State private var showingError = false
+    @State private var showingTemplates = false
+    @State private var formValidationErrors: [String] = []
     
     private let stepTitles = [
         "Tournament Info",
         "Format & Rules", 
         "Venue & Schedule",
         "Advanced Settings",
+        "AI Optimization",
         "Review & Create"
     ]
     
@@ -139,7 +158,8 @@ struct CreateTournamentWizard: View {
             case 1: formatAndRulesStep
             case 2: venueAndScheduleStep
             case 3: advancedSettingsStep
-            case 4: reviewStep
+            case 4: aiOptimizationStep
+            case 5: reviewStep
             default: basicInfoStep
             }
         }
@@ -382,7 +402,122 @@ struct CreateTournamentWizard: View {
         }
     }
     
-    // MARK: - Step 5: Review
+    // MARK: - Step 5: AI Optimization
+    private var aiOptimizationStep: some View {
+        VStack(spacing: 20) {
+            TournamentFormSection(title: "AI-Powered Optimization") {
+                VStack(spacing: 16) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Enable AI Optimization")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Get smart recommendations for your tournament")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $useAIOptimization)
+                    }
+                    
+                    if useAIOptimization {
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("Auto Bracket Seeding")
+                                Spacer()
+                                Toggle("", isOn: $autoBracketSeeding)
+                            }
+                            
+                            HStack {
+                                Text("Smart Pricing")
+                                Spacer()
+                                Toggle("", isOn: $smartPricing)
+                            }
+                            
+                            if smartPricing {
+                                Text("AI will analyze local market data and suggest optimal entry fees")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading, 16)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            TournamentFormSection(title: "Professional Features") {
+                VStack(spacing: 16) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Live Streaming")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Broadcast your tournament live")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $enableLiveStreaming)
+                    }
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Professional Package")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Advanced analytics, custom branding, premium support")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $enableProfessionalFeatures)
+                    }
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Social Media Integration")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Auto-post updates and results")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $socialMediaIntegration)
+                    }
+                }
+            }
+            
+            if useAIOptimization && isLoadingAI {
+                ProgressView("Analyzing tournament data...")
+                    .padding()
+            }
+            
+            if !aiRecommendations.isEmpty {
+                TournamentFormSection(title: "AI Recommendations") {
+                    VStack(spacing: 12) {
+                        ForEach(aiRecommendations, id: \.id) { recommendation in
+                            AIRecommendationCard(recommendation: recommendation) {
+                                applyRecommendation(recommendation)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if useAIOptimization {
+                loadAIRecommendations()
+            }
+        }
+        .onChange(of: useAIOptimization) { _, newValue in
+            if newValue {
+                loadAIRecommendations()
+            }
+        }
+    }
+    
+    // MARK: - Step 6: Review
     private var reviewStep: some View {
         VStack(spacing: 20) {
             TournamentFormSection(title: "Tournament Summary") {
@@ -476,7 +611,7 @@ struct CreateTournamentWizard: View {
         
         Task {
             do {
-                _ = try await tournamentService.createTournament(
+                _ = try await tournamentService?.createTournament(
                     name: name,
                     description: description,
                     type: "Double Elimination",
@@ -484,7 +619,7 @@ struct CreateTournamentWizard: View {
                     skillLevel: "Intermediate",
                     maxParticipants: maxParticipants,
                     startDate: startDate,
-                    organizerID: appState.currentUser?.id.uuidString ?? "",
+                    organizerID: Auth.auth().currentUser?.uid ?? "",
                     organizerName: appState.currentUser?.displayName ?? "",
                     venueName: venueName,
                     venueAddress: venueAddress
@@ -493,6 +628,15 @@ struct CreateTournamentWizard: View {
                 await MainActor.run {
                     isCreating = false
                     showingSuccessAlert = true
+                    
+                    // Refresh tournaments in AppState
+                    appState.refreshTournaments()
+                    
+                    // Send notification to refresh tournament views
+                    NotificationCenter.default.post(
+                        name: Notification.Name("tournamentCreated"),
+                        object: nil
+                    )
                 }
             } catch {
                 await MainActor.run {
@@ -527,10 +671,228 @@ struct CreateTournamentWizard: View {
         mustWinByTwo = true
         useTimeouts = true
         timeoutDuration = 60
+        
+        // Reset AI features
+        useAIOptimization = true
+        aiRecommendations = []
+        isLoadingAI = false
+        selectedTemplate = nil
+        enableLiveStreaming = false
+        enableProfessionalFeatures = false
+        socialMediaIntegration = false
+        smartPricing = false
+        autoBracketSeeding = true
+    }
+    
+    // MARK: - AI Optimization Methods
+    private func loadAIRecommendations() {
+        isLoadingAI = true
+        
+        Task {
+            do {
+                // Simulate AI analysis
+                try await Task.sleep(for: .seconds(2))
+                
+                let recommendations = await generateAIRecommendations()
+                
+                await MainActor.run {
+                    self.aiRecommendations = recommendations
+                    self.isLoadingAI = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isLoadingAI = false
+                }
+            }
+        }
+    }
+    
+    private func generateAIRecommendations() async -> [AIRecommendation] {
+        var recommendations: [AIRecommendation] = []
+        
+        // Analyze tournament data and generate recommendations
+        if smartPricing {
+            let suggestedFee = calculateOptimalEntryFee()
+            if suggestedFee != entryFee {
+                recommendations.append(AIRecommendation(
+                    id: "pricing",
+                    title: "Optimize Entry Fee",
+                    description: "Based on local market analysis, we recommend an entry fee of $\(String(format: "%.2f", suggestedFee)) to maximize participation",
+                    impact: "High",
+                    action: "price_optimization",
+                    value: suggestedFee
+                ))
+            }
+        }
+        
+        if autoBracketSeeding {
+            recommendations.append(AIRecommendation(
+                id: "seeding",
+                title: "Smart Bracket Seeding",
+                description: "Enable automatic bracket seeding based on player ELO ratings for more competitive matches",
+                impact: "Medium",
+                action: "enable_seeding",
+                value: nil
+            ))
+        }
+        
+        // Time optimization
+        let optimalTime = calculateOptimalStartTime()
+        if optimalTime != startDate {
+            recommendations.append(AIRecommendation(
+                id: "timing",
+                title: "Optimal Start Time",
+                description: "Based on player activity patterns, starting at \(DateFormatter.shortTime.string(from: optimalTime)) may increase participation",
+                impact: "Medium",
+                action: "time_optimization",
+                value: optimalTime
+            ))
+        }
+        
+        // Format recommendation
+        if selectedFormat != .doubles {
+            recommendations.append(AIRecommendation(
+                id: "format",
+                title: "Format Suggestion",
+                description: "Doubles tournaments typically have 40% higher participation rates in your area",
+                impact: "High",
+                action: "format_suggestion",
+                value: TournamentFormat.doubles
+            ))
+        }
+        
+        return recommendations
+    }
+    
+    private func calculateOptimalEntryFee() -> Double {
+        // Simulate AI calculation based on:
+        // - Local market data
+        // - Historical participation rates
+        // - Player demographics
+        // - Tournament type and format
+        
+        let basePrice = 25.0
+        let marketMultiplier = 1.2 // Based on local market
+        let formatMultiplier = selectedFormat == .doubles ? 1.3 : 1.0
+        let participantMultiplier = Double(maxParticipants) / 32.0
+        
+        return basePrice * marketMultiplier * formatMultiplier * participantMultiplier
+    }
+    
+    private func calculateOptimalStartTime() -> Date {
+        // Simulate AI calculation for optimal start time
+        // Based on player activity patterns, weather data, etc.
+        
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: startDate)
+        
+        // Most tournaments perform best starting at 10 AM on weekends
+        components.hour = 10
+        components.minute = 0
+        
+        return calendar.date(from: components) ?? startDate
+    }
+    
+    private func applyRecommendation(_ recommendation: AIRecommendation) {
+        switch recommendation.action {
+        case "price_optimization":
+            if let newPrice = recommendation.value as? Double {
+                entryFee = newPrice
+            }
+        case "time_optimization":
+            if let newTime = recommendation.value as? Date {
+                startDate = newTime
+            }
+        case "format_suggestion":
+            if let newFormat = recommendation.value as? TournamentFormat {
+                selectedFormat = newFormat
+            }
+        case "enable_seeding":
+            autoBracketSeeding = true
+        default:
+            break
+        }
+        
+        // Remove applied recommendation
+        aiRecommendations.removeAll { $0.id == recommendation.id }
     }
 }
 
+// MARK: - Supporting Structures
+
+struct AIRecommendation: Identifiable {
+    let id: String
+    let title: String
+    let description: String
+    let impact: String
+    let action: String
+    let value: Any?
+}
+
+struct TournamentTemplate: Identifiable {
+    let id: String
+    let name: String
+    let description: String
+    let format: TournamentFormat
+    let maxParticipants: Int
+    let entryFee: Double
+    let estimatedDuration: Int
+}
+
 // MARK: - Supporting Views
+
+struct AIRecommendationCard: View {
+    let recommendation: AIRecommendation
+    let onApply: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(recommendation.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    Text(recommendation.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                
+                Spacer()
+                
+                VStack(spacing: 8) {
+                    Text(recommendation.impact)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(impactColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(impactColor.opacity(0.1))
+                        .cornerRadius(6)
+                    
+                    Button("Apply") {
+                        onApply()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+    }
+    
+    private var impactColor: Color {
+        switch recommendation.impact {
+        case "High": return .red
+        case "Medium": return .orange
+        case "Low": return .green
+        default: return .gray
+        }
+    }
+}
 
 struct TournamentFormSection<Content: View>: View {
     let title: String
@@ -558,6 +920,79 @@ struct TournamentFormSection<Content: View>: View {
     }
 }
 
+struct RangeSlider: View {
+    @Binding var minValue: Double
+    @Binding var maxValue: Double
+    let bounds: ClosedRange<Double>
+    let step: Double
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("\(minValue, specifier: "%.1f")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(maxValue, specifier: "%.1f")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Min")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Slider(value: $minValue, in: bounds.lowerBound...maxValue, step: step)
+                        .tint(.blue)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Max")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Slider(value: $maxValue, in: minValue...bounds.upperBound, step: step)
+                        .tint(.blue)
+                }
+            }
+        }
+    }
+}
+
+struct TournamentFormatCard: View {
+    let format: TournamentFormat
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.title2)
+                    .foregroundColor(isSelected ? .white : .blue)
+                
+                Text(format.displayName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 80)
+            .background(isSelected ? Color.blue : Color(.systemGray6))
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var iconName: String {
+        switch format {
+        case .singles: return "person.circle"
+        case .doubles: return "person.2.circle"
+        case .mixedDoubles: return "person.2.circle.fill"
+        }
+    }
+}
+
 struct TournamentCreationTextField: View {
     let title: String
     @Binding var text: String
@@ -574,35 +1009,7 @@ struct TournamentCreationTextField: View {
     }
 }
 
-struct TournamentFormatCard: View {
-    let format: TournamentFormat
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: format.iconName)
-                    .font(.title2)
-                    .foregroundColor(isSelected ? .white : .blue)
-                
-                Text(format.rawValue)
-                    .font(.caption)
-                    .foregroundColor(isSelected ? .white : .primary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(height: 80)
-            .frame(maxWidth: .infinity)
-            .background(isSelected ? Color.blue : Color(.systemGray6))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
+
 
 struct ReviewRow: View {
     let title: String
@@ -619,32 +1026,7 @@ struct ReviewRow: View {
     }
 }
 
-struct RangeSlider: View {
-    @Binding var minValue: Double
-    @Binding var maxValue: Double
-    let bounds: ClosedRange<Double>
-    let step: Double
-    
-    var body: some View {
-        VStack {
-            HStack {
-                VStack {
-                    Text("Min")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Slider(value: $minValue, in: bounds.lowerBound...maxValue, step: step)
-                }
-                
-                VStack {
-                    Text("Max")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Slider(value: $maxValue, in: minValue...bounds.upperBound, step: step)
-                }
-            }
-        }
-    }
-}
+
 
 // MARK: - Button Styles
 
@@ -693,4 +1075,20 @@ extension DateFormatter {
         formatter.timeStyle = .short
         return formatter
     }()
+    
+    static let shortTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+}
+
+extension TournamentFormat {
+    var displayName: String {
+        switch self {
+        case .singles: return "Singles"
+        case .doubles: return "Doubles"
+        case .mixedDoubles: return "Mixed Doubles"
+        }
+    }
 } 

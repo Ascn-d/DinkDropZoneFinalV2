@@ -543,6 +543,15 @@ struct TournamentJoinView: View {
                     
                     // Show success feedback
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    
+                    // Send notification to refresh tournament views
+                    NotificationCenter.default.post(
+                        name: Notification.Name("tournamentUpdated"),
+                        object: nil
+                    )
+                    
+                    // Refresh tournaments in AppState
+                    appState.refreshTournaments()
                 }
                 
                 print("✅ Successfully joined tournament: \(tournament.name)")

@@ -2,15 +2,20 @@ import Foundation
 import Combine
 import os.log
 
-// MARK: - Simplified Realtime Matchmaking Service (No Firebase Dependencies)
+// MARK: - Realtime Matchmaking Service (Firebase-Connected)
 final class RealtimeMatchmakingService: ObservableObject {
     
     // MARK: - Observable Properties
+    @Published var currentProposal: MatchProposal?
+    @Published var connectionStatus: ConnectionStatus = .disconnected
+    
+    // Queue state properties (synced with AppState)
     @Published var isInQueue: Bool = false
     @Published var queuePosition: Int = 0
     @Published var estimatedWaitTime: TimeInterval = 0
-    @Published var currentProposal: MatchProposal?
-    @Published var connectionStatus: ConnectionStatus = .disconnected
+    
+    // Reference to AppState for queue state management
+    private weak var appState: AppState?
     
     // MARK: - Data Models
     struct MatchProposal: Identifiable, Codable {
@@ -41,23 +46,13 @@ final class RealtimeMatchmakingService: ObservableObject {
     
     private let logger = Logger(subsystem: "DinkDropZone", category: "RealtimeMatchmaking")
     
-    // MARK: - Mock Data
-    private var mockUsers: [MockUser] = [
-        MockUser(id: "user1", name: "Alex Johnson", elo: 1200),
-        MockUser(id: "user2", name: "Sarah Chen", elo: 1180),
-        MockUser(id: "user3", name: "Mike Wilson", elo: 1220),
-        MockUser(id: "user4", name: "Emma Davis", elo: 1150)
-    ]
-    
-    struct MockUser {
-        let id: String
-        let name: String
-        let elo: Int
-    }
+    // Firebase service for real data
+    private let firebaseService: FirebaseService = FirebaseService.shared
     
     // MARK: - Initialization
-    init() {
-        logger.info("RealtimeMatchmakingService initialized (simplified version)")
+    init(appState: AppState? = nil) {
+        self.appState = appState
+        logger.info("RealtimeMatchmakingService initialized with Firebase connectivity")
     }
     
     // MARK: - Public Methods
@@ -65,7 +60,11 @@ final class RealtimeMatchmakingService: ObservableObject {
     /// Join the realtime matchmaking queue
     @MainActor
     func joinQueue(userId: String, matchType: MatchType) async throws {
-        guard !isInQueue else {
+        guard let appState = appState else {
+            throw MatchmakingError.noAppState
+        }
+        
+        guard !appState.isInQueue else {
             throw MatchmakingError.alreadyInQueue
         }
         
@@ -76,9 +75,18 @@ final class RealtimeMatchmakingService: ObservableObject {
         // Simulate queue joining
         try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
-        isInQueue = true
-        queuePosition = Int.random(in: 1...5)
-        estimatedWaitTime = TimeInterval(Int.random(in: 30...120))
+        let position = Int.random(in: 1...5)
+        let waitTime = TimeInterval(Int.random(in: 30...120))
+        
+        // Update both AppState and local properties
+        appState.isInQueue = true
+        appState.queuePosition = position
+        appState.estimatedWaitTime = waitTime
+        
+        self.isInQueue = true
+        self.queuePosition = position
+        self.estimatedWaitTime = waitTime
+        
         connectionStatus = .connected
         
         // Start queue simulation
@@ -90,15 +98,25 @@ final class RealtimeMatchmakingService: ObservableObject {
     /// Leave the realtime matchmaking queue
     @MainActor
     func leaveQueue() async throws {
-        guard isInQueue else {
+        guard let appState = appState else {
+            throw MatchmakingError.noAppState
+        }
+        
+        guard appState.isInQueue else {
             throw MatchmakingError.noActiveQueue
         }
         
         logger.info("Leaving realtime queue")
         
-        isInQueue = false
-        queuePosition = 0
-        estimatedWaitTime = 0
+        // Update both AppState and local properties
+        appState.isInQueue = false
+        appState.queuePosition = 0
+        appState.estimatedWaitTime = 0
+        
+        self.isInQueue = false
+        self.queuePosition = 0
+        self.estimatedWaitTime = 0
+        
         currentProposal = nil
         connectionStatus = .disconnected
         
@@ -108,6 +126,10 @@ final class RealtimeMatchmakingService: ObservableObject {
     /// Respond to a match proposal
     @MainActor
     func respondToProposal(_ response: String) async throws {
+        guard let appState = appState else {
+            throw MatchmakingError.noAppState
+        }
+        
         guard let proposal = currentProposal else {
             throw MatchmakingError.noActiveProposal
         }
@@ -120,9 +142,13 @@ final class RealtimeMatchmakingService: ObservableObject {
         
         if response == "accept" {
             // Match accepted - exit queue
-            isInQueue = false
-            queuePosition = 0
-            estimatedWaitTime = 0
+            appState.isInQueue = false
+            appState.queuePosition = 0
+            appState.estimatedWaitTime = 0
+            
+            self.isInQueue = false
+            self.queuePosition = 0
+            self.estimatedWaitTime = 0
             
             logger.info("Match proposal accepted - exiting queue")
             
@@ -142,53 +168,84 @@ final class RealtimeMatchmakingService: ObservableObject {
     private func startQueueSimulation() {
         // Simulate queue position updates
         Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] timer in
-            guard let self = self, self.isInQueue else {
+            guard let self = self, let appState = self.appState else {
                 timer.invalidate()
                 return
             }
             
             Task { @MainActor in
-                // Update queue position
-                self.queuePosition = max(1, self.queuePosition - 1)
-                self.estimatedWaitTime = max(15, self.estimatedWaitTime - 10)
+                // Check if still in queue
+                guard appState.isInQueue else {
+                    timer.invalidate()
+                    return
+                }
                 
-                // Randomly create match proposals
+                // Update queue position in both AppState and local properties
+                let newPosition = max(1, appState.queuePosition - 1)
+                let newWaitTime = max(15, appState.estimatedWaitTime - 10)
+                
+                appState.queuePosition = newPosition
+                appState.estimatedWaitTime = newWaitTime
+                
+                self.queuePosition = newPosition
+                self.estimatedWaitTime = newWaitTime
+                
+                // Check for potential matches with real users
                 if Int.random(in: 1...100) <= 20 { // 20% chance every 10 seconds
-                    await self.createMockMatchProposal()
+                    await self.findAndCreateMatchProposal()
                 }
             }
         }
     }
     
-    private func createMockMatchProposal() async {
-        guard isInQueue, currentProposal == nil else { return }
+    @MainActor
+    private func findAndCreateMatchProposal() async {
+        guard let appState = appState, appState.isInQueue, currentProposal == nil else { return }
+        guard let currentUser = appState.currentUser else { return }
         
-        let randomOpponent = mockUsers.randomElement()!
-        
-        let proposal = MatchProposal(
-            id: UUID().uuidString,
-            player1Id: "current_user",
-            player2Id: randomOpponent.id,
-            player1Name: "You",
-            player2Name: randomOpponent.name,
-            matchType: "singles",
-            createdAt: Date(),
-            expiresAt: Date().addingTimeInterval(30) // 30 seconds to respond
-        )
-        
-        currentProposal = proposal
-        
-        logger.info("Created mock match proposal with \(randomOpponent.name)")
-        
-        // Auto-expire proposal after 30 seconds
-        Task {
-            try await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
-            if let current = currentProposal, current.id == proposal.id {
-                var expired = current
-                expired.status = .expired
-                currentProposal = nil
-                logger.info("Match proposal expired")
+        do {
+            // Find nearby users or users in queue from Firebase
+            let allUsers = try await firebaseService.getGlobalLeaderboard(limit: 100)
+            
+            // Filter for potential opponents (excluding current user)
+            let potentialOpponents = allUsers.filter { user in
+                user.id != currentUser.id && 
+                abs(user.elo - currentUser.elo) <= 200 // Similar skill level
             }
+            
+            guard let randomOpponent = potentialOpponents.randomElement() else {
+                logger.info("No suitable opponents found for match proposal")
+                return
+            }
+            
+            let proposal = MatchProposal(
+                id: UUID().uuidString,
+                player1Id: currentUser.id.uuidString,
+                player2Id: randomOpponent.id.uuidString,
+                player1Name: currentUser.displayName.isEmpty ? currentUser.email : currentUser.displayName,
+                player2Name: randomOpponent.displayName.isEmpty ? randomOpponent.email : randomOpponent.displayName,
+                matchType: "singles",
+                createdAt: Date(),
+                expiresAt: Date().addingTimeInterval(30) // 30 seconds to respond
+            )
+            
+            currentProposal = proposal
+            
+            logger.info("Created real match proposal with \(randomOpponent.displayName)")
+            
+            // Auto-expire proposal after 30 seconds
+            Task {
+                try await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                if let current = currentProposal, current.id == proposal.id {
+                    var expired = current
+                    expired.status = .expired
+                    currentProposal = nil
+                    logger.info("Match proposal expired")
+                }
+            }
+            
+        } catch {
+            logger.error("Failed to create real match proposal: \(error)")
         }
     }
 }
@@ -198,8 +255,10 @@ enum MatchmakingError: LocalizedError {
     case alreadyInQueue
     case noActiveQueue
     case noActiveProposal
+    case noAppState
     case notAuthenticated
     case networkError(Error)
+    case serviceInitializationFailed
     
     var errorDescription: String? {
         switch self {
@@ -209,10 +268,14 @@ enum MatchmakingError: LocalizedError {
             return "Not currently in queue"
         case .noActiveProposal:
             return "No active match proposal"
+        case .noAppState:
+            return "AppState reference not available"
         case .notAuthenticated:
             return "User not authenticated"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
+        case .serviceInitializationFailed:
+            return "Failed to initialize matchmaking service"
         }
     }
 } 

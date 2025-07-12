@@ -5,8 +5,6 @@ struct AuthView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\._openURL) private var openURL
     @Environment(\.modelContext) private var modelContext
-    @State private var isLoading = false
-    @State private var errorMessage: String?
     @State private var showingEmailAuth = false
     @State private var currentPage = 0
     @State private var animateElements = false
@@ -35,11 +33,15 @@ struct AuthView: View {
                     
                     // Authentication options
                     AuthenticationSection(
-                        isLoading: $isLoading,
-                        errorMessage: $errorMessage,
+                        authService: authService,
                         showingEmailAuth: $showingEmailAuth,
-                        onAppleSignIn: { handle(result: $0) },
-                        onGuestContinue: { appState.updateUser(guestUser()) }
+                        onAuthSuccess: { user in
+                            appState.updateUser(user)
+                        },
+                        onGuestContinue: { 
+                            let guestUser = authService.createGuestUser()
+                            appState.updateUser(guestUser) 
+                        }
                     )
                     .padding(.horizontal, 24)
                     .padding(.bottom, 40)
@@ -53,36 +55,10 @@ struct AuthView: View {
             }
         }
         .sheet(isPresented: $showingEmailAuth) {
-            EmailAuthView()
-        }
-    }
-
-    private func handle(result: Result<ASAuthorization, Error>) {
-        switch result {
-        case .success(_):
-            Task {
-                do {
-                    isLoading = true
-                    if authService.currentUser == nil {
-                        try await authService.signInWithApple()
-                    }
-                    if let user = authService.currentUser {
-                        appState.updateUser(user)
-                    }
-                } catch {
-                    errorMessage = error.localizedDescription
-                }
-                isLoading = false
+            EmailAuthView(authService: authService) { user in
+                appState.updateUser(user)
             }
-        case .failure(let error):
-            errorMessage = error.localizedDescription
         }
-    }
-
-    private func guestUser() -> User {
-        let user = User(email: "guest@localhost", password: "", elo: 1000, xp: 0, totalMatches: 0, wins: 0, losses: 0, winStreak: 0)
-        user.displayName = "Guest"
-        return user
     }
 }
 
@@ -175,11 +151,13 @@ struct HeroSection: View {
 // MARK: - Authentication Section
 
 struct AuthenticationSection: View {
-    @Binding var isLoading: Bool
-    @Binding var errorMessage: String?
+    let authService: AuthService
     @Binding var showingEmailAuth: Bool
-    let onAppleSignIn: (Result<ASAuthorization, Error>) -> Void
+    let onAuthSuccess: (User) -> Void
     let onGuestContinue: () -> Void
+    
+    @State private var showingError = false
+    @State private var errorMessage = ""
     
     var body: some View {
         VStack(spacing: 20) {
@@ -201,12 +179,12 @@ struct AuthenticationSection: View {
             SignInWithAppleButton(.signIn) { request in
                 request.requestedScopes = [.fullName, .email]
             } onCompletion: { result in
-                onAppleSignIn(result)
+                handleAppleSignIn(result: result)
             }
             .signInWithAppleButtonStyle(.whiteOutline)
             .frame(height: 50)
             .cornerRadius(25)
-            .disabled(isLoading)
+            .disabled(authService.isLoading)
             .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
             
             // Email sign in button
@@ -226,7 +204,7 @@ struct AuthenticationSection: View {
                 .cornerRadius(25)
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
             }
-            .disabled(isLoading)
+            .disabled(authService.isLoading)
             
             // Divider
             HStack {
@@ -258,10 +236,10 @@ struct AuthenticationSection: View {
                             .stroke(Color.white.opacity(0.3), lineWidth: 1)
                     )
             }
-            .disabled(isLoading)
+            .disabled(authService.isLoading)
             
             // Error message
-            if let errorMessage {
+            if !errorMessage.isEmpty {
                 Text(errorMessage)
                     .font(.caption)
                     .foregroundColor(.red.opacity(0.9))
@@ -273,11 +251,26 @@ struct AuthenticationSection: View {
             }
             
             // Loading indicator
-            if isLoading {
+            if authService.isLoading {
                 ProgressView()
                     .tint(.white)
                     .scaleEffect(1.2)
                     .padding(.top, 10)
+            }
+        }
+    }
+    
+    private func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
+        Task {
+            do {
+                let user = try await authService.signInWithApple()
+                await MainActor.run {
+                    onAuthSuccess(user)
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -292,42 +285,43 @@ struct DynamicAuthBackground: View {
         ZStack {
             // Base gradient
             LinearGradient(
-                colors: animateGradient ?
-                    [Color.blue.opacity(0.9), Color.purple.opacity(0.7), Color.blue.opacity(0.8)] :
-                    [Color.purple.opacity(0.8), Color.blue.opacity(0.8), Color.purple.opacity(0.9)],
+                colors: [
+                    Color.blue.opacity(0.8),
+                    Color.purple.opacity(0.7),
+                    Color.indigo.opacity(0.9)
+                ],
                 startPoint: animateGradient ? .topLeading : .bottomTrailing,
                 endPoint: animateGradient ? .bottomTrailing : .topLeading
             )
+            .animation(.easeInOut(duration: 8.0).repeatForever(autoreverses: true), value: animateGradient)
             
             // Overlay pattern
-            GeometryReader { geometry in
-                Path { path in
-                    let width = geometry.size.width
-                    let height = geometry.size.height
-                    
-                    path.move(to: CGPoint(x: 0, y: height * 0.7))
-                    path.addCurve(
-                        to: CGPoint(x: width, y: height * 0.5),
-                        control1: CGPoint(x: width * 0.3, y: height * 0.8),
-                        control2: CGPoint(x: width * 0.7, y: height * 0.3)
-                    )
-                    path.addLine(to: CGPoint(x: width, y: height))
-                    path.addLine(to: CGPoint(x: 0, y: height))
-                    path.closeSubpath()
-                }
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(0.1),
+                    Color.clear
+                ],
+                center: .topTrailing,
+                startRadius: 50,
+                endRadius: 300
+            )
+            
+            // Additional glow effects
+            Circle()
                 .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.1), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
+                    RadialGradient(
+                        colors: [Color.cyan.opacity(0.3), Color.clear],
+                        center: .center,
+                        startRadius: 20,
+                        endRadius: 200
                     )
                 )
-            }
+                .frame(width: 400, height: 400)
+                .offset(x: -100, y: -200)
+                .animation(.easeInOut(duration: 6.0).repeatForever(autoreverses: true), value: animateGradient)
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 4.0).repeatForever(autoreverses: true)) {
-                animateGradient.toggle()
-            }
+            animateGradient = true
         }
     }
 }
